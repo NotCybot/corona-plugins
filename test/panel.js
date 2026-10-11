@@ -19,7 +19,7 @@ export default class Panel extends View {
       .gap_2()
       .p_4()
       .child(get("label"))
-      .child("Opened from the bar widget; Click it again to close. Test")
+      .child("Opened from the bar widget; Click it again to close.")
       .child(new Button("test-close").label("Close").on_click(() => closePanel("main")));
   }
 }
