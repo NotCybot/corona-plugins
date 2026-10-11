@@ -21,3 +21,6 @@ key = "label"
 label = "Label"
 type = "text"
 default = "Test"
+
+[capabilities]
+corona = ["notifications"]
