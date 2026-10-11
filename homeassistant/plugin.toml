@@ -1,0 +1,46 @@
+#:schema /run/current-system/sw/share/corona/schema/plugin.schema.json
+id = "homeassistant"
+name = "Home Assistant"
+version = "0.1.0"
+description = "Home Assistant: pinned lights, switches, sensors and automations, live over the WebSocket API"
+
+# holds the WebSocket to Home Assistant; pushes the pinned entities to the views
+service = "service.ts"
+
+# a bar button; shown as `homeassistant:home` in a bar
+[widgets.home]
+view = "widget.ts"
+name = "Home Assistant"
+
+# opened by the widget, as `homeassistant:main`
+[panels.main]
+view = "panel.ts"
+name = "Home Assistant"
+width = 440
+height = 500
+
+# a LAN server needs its IP here: corona refuses a host name that resolves to a private address
+[[settings]]
+key = "url"
+label = "URL"
+description = "e.g. http://192.168.1.10:8123 or https://example.ui.nabu.casa"
+type = "text"
+default = ""
+
+[[settings]]
+key = "token"
+label = "Long-lived access token"
+description = "Home Assistant → Profile → Security → Long-lived access tokens"
+type = "secret"
+placeholder = "paste the token"
+
+[[settings]]
+key = "entities"
+label = "Monitored entities"
+description = "Entity ids shown in the panel; also set from its Manage entities page"
+type = "list"
+default = []
+
+[capabilities]
+corona = ["secrets"]
+network = { hosts = ["${setting:url}"] }

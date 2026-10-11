@@ -30,3 +30,11 @@ version = "0.1.0"
 description = "KDE Connect: phone status, quick actions, media, SMS, pairing and screen casting with scrcpy"
 readme = "README.md"
 tags = ["phone", "kdeconnect"]
+
+[[plugin]]
+id = "homeassistant"
+name = "Home Assistant"
+version = "0.1.0"
+description = "Home Assistant: pinned lights, switches, sensors and automations, live over the WebSocket API"
+readme = "README.md"
+tags = ["home", "smart-home"]
