@@ -3,7 +3,7 @@
 [[plugin]]
 id = "test"
 name = "Dashboard"
-version = "0.1.0"
+version = "0.1.1"
 description = "A test plugin"
 
 [[plugin]]
