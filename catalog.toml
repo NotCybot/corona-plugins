@@ -14,3 +14,11 @@ description = "Exercises every plugin API: service, IPC, D-Bus, processes, socke
 icon = "assets/gradient.png"
 readme = "README.md"
 tags = ["demo", "test"]
+
+[[plugin]]
+id = "tailscale"
+name = "Tailscale"
+version = "0.1.0"
+description = "Tailscale status, devices, exit nodes, Taildrop and preferences"
+readme = "README.md"
+tags = ["network", "vpn"]

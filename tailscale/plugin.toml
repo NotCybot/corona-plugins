@@ -1,0 +1,36 @@
+#:schema /run/current-system/sw/share/corona/schema/plugin.schema.json
+id = "tailscale"
+name = "Tailscale"
+version = "0.1.0"
+description = "Tailscale status, devices, exit nodes, Taildrop and preferences"
+
+# talks to tailscaled; pushes its state to the views
+service = "service.ts"
+
+# a bar button; shown as `tailscale:tailscale` in a bar
+[widgets.tailscale]
+view = "widget.ts"
+name = "Tailscale"
+
+# opened by the widget, as `tailscale:main`
+[panels.main]
+view = "panel.ts"
+name = "Tailscale"
+width = 440
+height = 500
+
+[[settings]]
+key = "downloads"
+label = "Taildrop folder"
+description = "Where received files are saved. Asked for on the first receive when empty."
+type = "text"
+default = ""
+
+[capabilities]
+corona = ["desktop"]
+# `tailscale file cp/get` for Taildrop; children need PATH to find it
+fs = { execute = ["tailscale"] }
+process = { env = ["PATH"] }
+# the LocalAPI; write actions need `tailscale set --operator=$USER`
+network = { unix = ["/run/tailscale/tailscaled.sock"] }
+clipboard = { write = true }
