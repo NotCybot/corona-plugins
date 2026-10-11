@@ -9,7 +9,7 @@ description = "A test plugin"
 [[plugin]]
 id = "demo"
 name = "Demo"
-version = "0.1.0"
+version = "0.2.0"
 description = "Exercises every plugin API: service, IPC, D-Bus, processes, sockets, fetch, secrets, notifications, i18n, desktop"
 icon = "assets/gradient.png"
 readme = "README.md"

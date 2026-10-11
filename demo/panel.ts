@@ -21,7 +21,7 @@ const METHODS = [
   "tailscale",
   "fetch",
   "secret",
-  "dbusNotify",
+  "richNotify",
   "stdin",
   "files",
   "unixFetch",

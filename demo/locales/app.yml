@@ -92,9 +92,9 @@ button:
   secret:
     en: Secret round trip
     de: Geheimnis-Rundlauf
-  dbusNotify:
-    en: Rich notify (D-Bus)
-    de: Reiche Benachrichtigung (D-Bus)
+  richNotify:
+    en: Rich notify
+    de: Reiche Benachrichtigung
   stdin:
     en: Stdin + closeStdin
     de: Stdin + closeStdin
@@ -136,17 +136,11 @@ notify:
     en: Rich notification
     de: Reiche Benachrichtigung
   rich_body:
-    en: "<b>Bold</b>, <i>italic</i> and a <a href=\"https://example.com\">link</a>.\nThe icon is a 2×2 image from image-data."
-    de: "<b>Fett</b>, <i>kursiv</i> und ein <a href=\"https://example.com\">Link</a>.\nDas Symbol ist ein 2×2-Bild aus image-data."
-  reply:
-    en: Reply
-    de: Antworten
+    en: "<b>Bold</b>, <i>italic</i> and a <a href=\"https://example.com\">link</a>.\nThe picture is the plugin's gradient."
+    de: "<b>Fett</b>, <i>kursiv</i> und ein <a href=\"https://example.com\">Link</a>.\nDas Bild ist der Verlauf des Plugins."
   reply_placeholder:
     en: Type a reply…
     de: Antwort eingeben…
-  rich_hint:
-    en: reply in the popup; NotificationReplied shows under D-Bus signals
-    de: im Popup antworten; NotificationReplied erscheint unter D-Bus-Signale
   waiting:
     en: "notification %{id}: waiting for a click"
     de: "Benachrichtigung %{id}: wartet auf einen Klick"

@@ -1,7 +1,7 @@
 #:schema /run/current-system/sw/share/corona/schema/plugin.schema.json
 id = "demo"
 name = "Demo"
-version = "0.1.0"
+version = "0.2.0"
 description = "Exercises every plugin API: service, IPC, D-Bus, processes, sockets, fetch, secrets, notifications, i18n, desktop"
 
 # headless, runs while the plugin is enabled; answers `call` and `corona ipc plugin demo <method>`
@@ -61,8 +61,9 @@ default = "none"
 corona = ["notifications", "secrets", "desktop", "power"]
 # the PNG read as bytes for `image(Uint8Array)`; file handles write into the data dir
 fs = { read = ["${pluginDir}", "${dataDir}"], write = ["${dataDir}"], execute = ["sh", "date"] }
-# children get only these host variables; `sleep` inside `sh -c` needs PATH
+# children get only these host variables; `sleep` inside `sh -c` needs the host's PATH
 process = { env = ["PATH", "HOME"] }
 network = { hosts = ["example.com"], unix = ["/run/tailscale/tailscaled.sock"] }
 clipboard = { write = true }
-dbus = { session = ["org.freedesktop.Notifications", "org.kde.kdeconnect"] }
+# corona owns org.freedesktop.Notifications: notifications go through `corona/notifications`
+dbus = { session = ["org.kde.kdeconnect"] }

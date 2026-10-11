@@ -4,7 +4,9 @@ import { notify, nextAction } from "corona/notifications";
 import { call as dbusCall, getProperty, nameHasOwner, subscribe, nextSignal } from "corona/dbus";
 import type { Rule } from "corona/dbus";
 import * as secrets from "corona/secrets";
+import { readFile } from "fs/promises";
 import { listenRedirect, nextRedirect, openUri, pickFiles } from "corona/desktop";
+import { open } from "fs/promises";
 import { nextSleepEvent } from "corona/power";
 import { closePanel, openPanel } from "corona/surface";
 import { get, set, setOptions } from "corona/settings";
@@ -13,12 +15,10 @@ import process from "process";
 import type { ChildProcess } from "process";
 import { connect } from "net";
 import type { Socket } from "net";
-import { open } from "fs/promises";
 import { Buffer } from "buffer";
 import type { AsyncContext } from "gpui-kit";
 import { message, ok } from "./util.ts";
 
-const NOTIFICATIONS = "org.freedesktop.Notifications";
 const KDECONNECT = "org.kde.kdeconnect";
 const TAILSCALE = "/run/tailscale/tailscaled.sock";
 const TEST_URL = "https://example.com/";
@@ -34,7 +34,7 @@ const methods: Record<string, (args: JsonValue) => Promise<JsonValue>> = {
   fetch: fetchBoth,
   secret,
   pick,
-  dbusNotify,
+  richNotify,
   stdin,
   files,
   unixFetch,
@@ -57,11 +57,6 @@ export default async function main(cx: AsyncContext): Promise<void> {
   cx.timer.every(1000, () => {
     if (get("heartbeat")) setState("heartbeat", ++beats);
   });
-  // the shell's own notification server emits this when one closes
-  void watch({ bus: "session", sender: NOTIFICATIONS, iface: NOTIFICATIONS, member: "NotificationClosed" });
-  // what `dbusNotify`'s inline reply and buttons send back
-  void watch({ bus: "session", sender: NOTIFICATIONS, iface: NOTIFICATIONS, member: "NotificationReplied" });
-  void watch({ bus: "session", sender: NOTIFICATIONS, iface: NOTIFICATIONS, member: "ActionInvoked" });
   // KDE Connect only emits custom signals (battery, reachability, ...)
   void watch({ bus: "session", sender: KDECONNECT, pathNamespace: "/modules/kdeconnect" });
   const options = setOptions("favorite", FAVORITES);
@@ -159,30 +154,23 @@ async function notifyAndWait(): Promise<JsonValue> {
       ],
     }),
   );
+  return waitForAction(id);
+}
+
+/** The first action picked, or reply typed, on notification `id`, also kept in state `action` */
+async function waitForAction(id: number): Promise<JsonValue> {
   setState("action", t("notify.waiting", { id }));
   while (true) {
     // every waiter gets every action of the plugin's notifications
     const action = ok(await nextAction());
     if (action.id !== id) continue;
-    setState("action", t("notify.picked", { id, key: action.key }));
-    return { id, key: action.key };
+    const picked = action.text == null ? action.key : `${action.key}: ${action.text}`;
+    setState("action", t("notify.picked", { id, key: picked }));
+    return { id, key: action.key, text: action.text ?? null };
   }
 }
 
 async function dbus(): Promise<JsonValue> {
-  const notifications = ok(await nameHasOwner("session", NOTIFICATIONS));
-  const server = notifications
-    ? ok(
-        await dbusCall({
-          bus: "session",
-          dest: NOTIFICATIONS,
-          path: "/org/freedesktop/Notifications",
-          iface: NOTIFICATIONS,
-          method: "GetServerInformation",
-        }),
-      )
-    : null;
-
   const kdeconnect = ok(await nameHasOwner("session", KDECONNECT));
   let devices: JsonValue = null;
   if (kdeconnect) {
@@ -213,7 +201,7 @@ async function dbus(): Promise<JsonValue> {
       })),
     );
   }
-  return { notifications, server, kdeconnect, devices };
+  return { kdeconnect, devices };
 }
 
 type TailscaleStatus = {
@@ -322,38 +310,20 @@ async function sleepEvents(): Promise<void> {
   }
 }
 
-/**
- * Notify over raw D-Bus: `$type` forces the `y` urgency and the
- * `(iiibiiay)` image inside the `a{sv}` hints; the signature comes from
- * introspection. Shows markup, an image and an inline reply.
- */
-async function dbusNotify(): Promise<JsonValue> {
-  // 2x2 RGBA: red, green / blue, white
-  const pixels = [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255];
+/** Markup, a picture and an inline reply; answers with the click or the typed text */
+async function richNotify(): Promise<JsonValue> {
   const id = ok(
-    await dbusCall({
-      bus: "session",
-      dest: NOTIFICATIONS,
-      path: "/org/freedesktop/Notifications",
-      iface: NOTIFICATIONS,
-      method: "Notify",
-      args: [
-        "Demo",
-        0,
-        "",
-        t("notify.rich_summary"),
-        t("notify.rich_body"),
-        ["inline-reply", t("notify.reply"), "open", t("notify.open")],
-        {
-          urgency: { $type: "y", value: 1 },
-          "image-data": { $type: "(iiibiiay)", value: [2, 2, 8, true, 8, 4, pixels] },
-          "x-kde-reply-placeholder-text": t("notify.reply_placeholder"),
-        },
-        30_000,
-      ],
+    await notify({
+      summary: t("notify.rich_summary"),
+      body: t("notify.rich_body"),
+      // the PNG through the `fs.read` grant, sent as the notification's picture
+      image: await readFile("assets/gradient.png"),
+      actions: [{ key: "open", label: t("notify.open") }],
+      reply: { placeholder: t("notify.reply_placeholder") },
+      timeout: 30_000,
     }),
   );
-  return { id, hint: t("notify.rich_hint") };
+  return waitForAction(id);
 }
 
 /** `closeStdin` ends the child's input after the queued writes */
