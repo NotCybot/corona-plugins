@@ -22,3 +22,11 @@ version = "0.1.0"
 description = "Tailscale status, devices, exit nodes, Taildrop and preferences"
 readme = "README.md"
 tags = ["network", "vpn"]
+
+[[plugin]]
+id = "kdeconnect"
+name = "Phone"
+version = "0.1.0"
+description = "KDE Connect: phone status, quick actions, media, SMS, pairing and screen casting with scrcpy"
+readme = "README.md"
+tags = ["phone", "kdeconnect"]

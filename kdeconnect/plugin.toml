@@ -1,0 +1,35 @@
+#:schema /run/current-system/sw/share/corona/schema/plugin.schema.json
+id = "kdeconnect"
+name = "Phone"
+version = "0.1.0"
+description = "KDE Connect: phone status, quick actions, media, SMS, pairing and screen casting with scrcpy"
+
+# follows kdeconnectd on D-Bus; pushes its state to the views
+service = "service.ts"
+
+# a bar button; shown as `kdeconnect:phone` in a bar
+[widgets.phone]
+view = "widget.ts"
+name = "Phone"
+
+# opened by the widget, as `kdeconnect:main`
+[panels.main]
+view = "panel.ts"
+name = "Phone"
+width = 440
+height = 500
+
+[[settings]]
+key = "recordings"
+label = "Recordings folder"
+description = "Where recorded cast sessions are saved. Asked for on the first recording when empty."
+type = "text"
+default = ""
+
+[capabilities]
+corona = ["desktop"]
+dbus = { session = ["org.kde.kdeconnect"] }
+# casting: adb for wireless debugging, scrcpy for the mirror window
+fs = { execute = ["adb", "scrcpy"] }
+# adb keeps its keys in HOME; scrcpy opens a window on the session's display
+process = { env = ["PATH", "HOME", "XDG_RUNTIME_DIR", "WAYLAND_DISPLAY", "DISPLAY"] }
