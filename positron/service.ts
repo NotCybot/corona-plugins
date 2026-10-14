@@ -1,5 +1,10 @@
-import { fail, nextCall, reply } from 'corona/plugin';
-import type { Call, JsonValue } from 'corona/plugin';
+import {
+  type Call,
+  type JsonValue,
+  fail,
+  nextCall,
+  reply
+} from 'corona/plugin';
 import { notify } from 'corona/notifications';
 import process from 'process';
 

@@ -1,12 +1,11 @@
-import { View, div } from 'gpui-kit';
-import type { Context, Element } from 'gpui-kit';
+import { type Context, type Element, View, div } from 'gpui-kit';
 import { Icon } from 'gpui-component';
 import { call } from 'corona/plugin';
 import { bar } from 'corona/surface';
 
 /** A notes icon that opens and closes positron's notes window. */
 export default class Widget extends View {
-  render(cx: Context): Element {
+  public render(cx: Context): Element {
     const theme = cx.theme();
     // Like corona's own bar buttons: a 16 px icon in a round 24 px button,
     // Secondary, ghost without a pill of its own.

@@ -1,12 +1,19 @@
-import { fail, getState, nextCall, reply, setState } from 'corona/plugin';
-import type { Call, JsonValue } from 'corona/plugin';
+import {
+  type Call,
+  type JsonValue,
+  fail,
+  nextCall,
+  reply,
+  setState
+} from 'corona/plugin';
 import { openUri, pickFiles } from 'corona/desktop';
 import { closePanel, openPanel } from 'corona/surface';
 import { get, set } from 'corona/settings';
 import process from 'process';
-import { basename } from 'path';
+import nodePath from 'path';
 import { Buffer } from 'buffer';
 import type { AsyncContext } from 'gpui-kit';
+import { isObject, snapshot as last, recent } from './state.ts';
 
 const SOCKET = '/run/tailscale/tailscaled.sock';
 const LOCALAPI = 'http://local-tailscaled.sock/localapi/v0/';
@@ -92,6 +99,10 @@ const PREF_FIELDS: Record<Exclude<PrefKey, 'advertise'>, string> = {
   ssh: 'RunSSH'
 };
 
+function isPrefField(key: JsonValue): key is keyof typeof PREF_FIELDS {
+  return typeof key === 'string' && Object.hasOwn(PREF_FIELDS, key);
+}
+
 const CONN: Record<string, Conn> = {
   NeedsLogin: 'needs-login',
   NeedsMachineAuth: 'needs-login',
@@ -144,7 +155,7 @@ async function answer({ id, method, args }: Call): Promise<void> {
     return;
   }
   try {
-    const line = await handler((args ?? {}) as Args);
+    const line = await handler(isObject(args) ? args : {});
     // Also through state: a call that outlives a closed panel still reaches the next one
     if (line) {
       setState('msg', line);
@@ -244,10 +255,10 @@ function queueRefresh(): void {
 async function refresh(): Promise<void> {
   try {
     const [status, prefs, files] = await Promise.all([
-      api('status') as Promise<Status>,
-      api('prefs') as Promise<Prefs>,
+      api<Status>('status'),
+      api<Prefs>('prefs'),
       // Fails without Taildrop; not worth failing the rest for
-      (api('files/') as Promise<unknown[] | null>).catch((): null => null)
+      api<unknown[] | null>('files/').catch((): null => null)
     ]);
     setState('ts', snapshot(status, prefs, files?.length ?? 0));
   } catch (error) {
@@ -269,7 +280,7 @@ function snapshot(status: Status, prefs: Prefs, waiting: number): Snapshot {
       online: node.Online,
       os: node.OS
     }))
-    .sort(
+    .toSorted(
       (a, b) =>
         Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)
     );
@@ -302,7 +313,7 @@ function nodeName(node: Node): string {
 }
 
 function unavailable(error: unknown): void {
-  const last = getState('ts') as Snapshot | null;
+  const previous = last();
   setState('ts', {
     admin: null,
     conn: 'unavailable',
@@ -310,7 +321,7 @@ function unavailable(error: unknown): void {
     exitNode: null,
     keyExpiry: null,
     peers: [],
-    prefs: last?.prefs ?? {
+    prefs: previous?.prefs ?? {
       advertise: false,
       lan: false,
       routes: false,
@@ -323,11 +334,11 @@ function unavailable(error: unknown): void {
 }
 
 /** One LocalAPI request; the parsed JSON answer, null when empty */
-async function api(
+async function api<T = unknown>(
   path: string,
   method = 'GET',
   body?: JsonValue
-): Promise<unknown> {
+): Promise<T> {
   const options: Parameters<typeof fetch>[1] = {
     headers: HEADERS,
     method,
@@ -366,15 +377,15 @@ async function login(): Promise<string> {
 async function setPref({ key, on, label }: Args): Promise<string> {
   const value = on === true;
   if (key === 'advertise') {
-    const prefs = (await api('prefs')) as Prefs;
+    const prefs = await api<Prefs>('prefs');
     const routes = (prefs.AdvertiseRoutes ?? []).filter(
       (route) => !EXIT_ROUTES.includes(route)
     );
     await patch({
       AdvertiseRoutes: value ? [...routes, ...EXIT_ROUTES] : routes
     });
-  } else if (typeof key === 'string' && Object.hasOwn(PREF_FIELDS, key)) {
-    await patch({ [PREF_FIELDS[key as keyof typeof PREF_FIELDS]]: value });
+  } else if (isPrefField(key)) {
+    await patch({ [PREF_FIELDS[key]]: value });
   } else {
     throw new Error(`unknown preference ${key}`);
   }
@@ -382,15 +393,12 @@ async function setPref({ key, on, label }: Args): Promise<string> {
 }
 
 async function ping({ ip, name }: Args): Promise<string> {
-  const result = (await api(
-    `ping?ip=${encodeURIComponent(String(ip))}&type=disco`,
-    'POST'
-  )) as {
+  const result = await api<{
     Err?: string;
     LatencySeconds?: number;
     Endpoint?: string;
     DERPRegionCode?: string;
-  };
+  }>(`ping?ip=${encodeURIComponent(String(ip))}&type=disco`, 'POST');
   if (result.Err) {
     throw new Error(`Ping ${name}: ${result.Err}`);
   }
@@ -411,7 +419,7 @@ async function send({ ip, name }: Args): Promise<string | null> {
   await tailscale(['file', 'cp', ...paths, `${ip}:`]);
   remember(
     paths.map((path) => ({
-      file: basename(path),
+      file: nodePath.basename(path),
       meta: `Sent to ${name} · ${now()}`
     }))
   );
@@ -419,7 +427,7 @@ async function send({ ip, name }: Args): Promise<string | null> {
 }
 
 async function receive(): Promise<string | null> {
-  const files = ((await api('files/')) ?? []) as { Name: string }[];
+  const files = (await api<{ Name: string }[] | null>('files/')) ?? [];
   if (files.length === 0) {
     return 'Taildrop: no files waiting';
   }
@@ -429,7 +437,7 @@ async function receive(): Promise<string | null> {
     if (!picked) {
       return null;
     }
-    dir = picked[0];
+    [dir] = picked;
     const error = set('downloads', dir);
     if (error) {
       console.warn(`tailscale: keeping the Taildrop folder: ${error.message}`);
@@ -449,10 +457,13 @@ async function pick(
   closePanel('main');
   const picked = await pickFiles(options);
   openPanel('main');
-  if (picked !== null && 'message' in picked) {
+  if (picked === null) {
+    return null;
+  }
+  if ('message' in picked) {
     throw new Error(picked.message);
   }
-  return picked as string[] | null;
+  return picked;
 }
 
 async function tailscale(args: string[]): Promise<void> {
@@ -465,8 +476,7 @@ async function tailscale(args: string[]): Promise<void> {
 }
 
 function remember(entries: Recent[]): void {
-  const recent = (getState('recent') as Recent[] | null) ?? [];
-  setState('recent', [...entries.reverse(), ...recent].slice(0, 5));
+  setState('recent', [...entries.toReversed(), ...recent()].slice(0, 5));
 }
 
 function now(): string {

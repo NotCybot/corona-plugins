@@ -1,6 +1,13 @@
-import { fail, getState, nextCall, reply, setState } from 'corona/plugin';
-import type { Call, JsonValue } from 'corona/plugin';
 import {
+  type Call,
+  type JsonValue,
+  fail,
+  nextCall,
+  reply,
+  setState
+} from 'corona/plugin';
+import {
+  type Rule,
   call as dbusCall,
   getAll,
   nameHasOwner,
@@ -8,12 +15,18 @@ import {
   setProperty,
   subscribe
 } from 'corona/dbus';
-import type { Rule } from 'corona/dbus';
 import { pickFiles } from 'corona/desktop';
 import { closePanel, openPanel } from 'corona/surface';
 import { get, set } from 'corona/settings';
-import process from 'process';
-import type { ChildProcess } from 'process';
+import process, { type ChildProcess } from 'process';
+import {
+  castStates,
+  isCastOptions,
+  isObject,
+  isStrings,
+  snapshot,
+  unmuteVolumes
+} from './state.ts';
 
 const KC = 'org.kde.kdeconnect';
 const ROOT = '/modules/kdeconnect';
@@ -173,7 +186,7 @@ async function answer({ id, method, args }: Call): Promise<void> {
     return;
   }
   try {
-    const line = await handler((args ?? {}) as Args);
+    const line = await handler(isObject(args) ? args : {});
     // Also through state: a call that outlives a closed panel still reaches the next one
     if (line) {
       setState('msg', line);
@@ -231,7 +244,10 @@ async function refresh(): Promise<void> {
         path: ROOT,
         signature: 'bb'
       })
-    ) as string[];
+    );
+    if (!isStrings(ids)) {
+      throw new Error('unexpected device list');
+    }
     const devices = (await Promise.all(ids.map(read))).filter(
       (d): d is Device => d !== null
     );
@@ -247,13 +263,13 @@ async function refresh(): Promise<void> {
 }
 
 async function read(id: string): Promise<Device | null> {
-  const props = (await getAll({
+  const props = await getAll({
     bus: 'session',
     dest: KC,
     iface: IFACE,
     path: path(id)
-  })) as Record<string, JsonValue>;
-  if ('message' in props) {
+  });
+  if (!isObject(props) || 'message' in props) {
     return null;
   } // Gone meanwhile
   const reachable = props.isReachable === true;
@@ -261,14 +277,16 @@ async function read(id: string): Promise<Device | null> {
   const live = reachable && paired;
   const [battery, network, media] = live
     ? await Promise.all([
-        props_(id, 'battery'),
-        props_(id, 'connectivity_report'),
-        props_(id, 'mprisremote')
+        pluginProps(id, 'battery'),
+        pluginProps(id, 'connectivity_report'),
+        pluginProps(id, 'mprisremote')
       ])
     : [null, null, null];
-  const addresses = (props.reachableAddresses as string[] | null) ?? [];
+  const [address] = isStrings(props.reachableAddresses)
+    ? props.reachableAddresses
+    : [];
   return {
-    address: addresses[0] ?? null,
+    address: address ?? null,
     battery:
       battery && Number(battery.charge) >= 0
         ? {
@@ -307,7 +325,7 @@ async function read(id: string): Promise<Device | null> {
 }
 
 /** Every property of a device plugin, null when the phone has it off */
-async function props_(
+async function pluginProps(
   id: string,
   name: string
 ): Promise<Record<string, JsonValue> | null> {
@@ -317,9 +335,7 @@ async function props_(
     iface: `${IFACE}.${name}`,
     path: `${path(id)}/${name}`
   });
-  return props && typeof props === 'object' && !('message' in props)
-    ? (props as Record<string, JsonValue>)
-    : null;
+  return isObject(props) && !('message' in props) ? props : null;
 }
 
 function path(id: JsonValue): string {
@@ -378,10 +394,8 @@ async function mpris(
 
 /** Mutes to 0 and back to the volume before, kept per device in state `unmute` */
 async function mute({ id }: Args): Promise<string | null> {
-  const dev = ((getState('kc') as Snapshot | null)?.devices ?? []).find(
-    (d) => d.id === id
-  );
-  const unmute = (getState('unmute') as Record<string, number> | null) ?? {};
+  const dev = (snapshot()?.devices ?? []).find((d) => d.id === id);
+  const unmute = unmuteVolumes();
   const volume = dev?.volume ?? 0;
   if (volume > 0) {
     setState('unmute', { ...unmute, [String(id)]: volume });
@@ -419,10 +433,13 @@ async function pick(
   closePanel('main');
   const picked = await pickFiles(options);
   openPanel('main');
-  if (picked !== null && 'message' in picked) {
+  if (picked === null) {
+    return null;
+  }
+  if ('message' in picked) {
     throw new Error(picked.message);
   }
-  return picked as string[] | null;
+  return picked;
 }
 
 // ---- casting: adb over Wi-Fi, scrcpy for the window ----
@@ -431,14 +448,14 @@ async function pick(
 async function adb(args: string[]): Promise<string> {
   const out = await process.run('adb', args);
   const text = `${out.stdout}${out.stderr}`.trim();
-  if (out.code !== 0 || /^(failed|error)/im.test(text)) {
+  if (out.code !== 0 || /^(?:failed|error)/im.test(text)) {
     throw new Error(text || `adb ${args[0]} exited ${out.code}`);
   }
   return text;
 }
 
 function setCast(id: JsonValue, patch: Partial<Cast>): void {
-  const all = (getState('cast') as Record<string, Cast> | null) ?? {};
+  const all = castStates();
   const now = all[String(id)] ?? { casting: false, serial: null };
   setState('cast', { ...all, [String(id)]: { ...now, ...patch } });
 }
@@ -485,7 +502,10 @@ async function cast({ id, serial, options }: Args): Promise<string | null> {
   if (casts.has(String(id))) {
     throw new Error('already casting');
   }
-  const o = options as CastOptions;
+  if (!isCastOptions(options)) {
+    throw new Error('missing cast options');
+  }
+  const o = options;
   const args = [
     `--serial=${serial}`,
     `--max-size=${o.res}`,
@@ -505,7 +525,7 @@ async function cast({ id, serial, options }: Args): Promise<string | null> {
       if (!picked) {
         return null;
       }
-      dir = picked[0];
+      [dir] = picked;
       const error = set('recordings', dir);
       if (error) {
         console.warn(
@@ -544,16 +564,20 @@ async function cast({ id, serial, options }: Args): Promise<string | null> {
 }
 
 /** `value` without its failure, which is thrown */
-function ok<T>(value: T): Exclude<T, { message: string }> {
-  if (
-    value &&
+function ok<T>(value: T | { message: string }): T {
+  if (failed(value)) {
+    throw new Error(value.message);
+  }
+  return value;
+}
+
+function failed(value: unknown): value is { message: string } {
+  return (
     typeof value === 'object' &&
+    value !== null &&
     !Array.isArray(value) &&
     'message' in value
-  ) {
-    throw new Error(String((value as { message: unknown }).message));
-  }
-  return value as Exclude<T, { message: string }>;
+  );
 }
 
 function message(error: unknown): string {

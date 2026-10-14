@@ -1,10 +1,15 @@
-import { View, div } from 'gpui-kit';
-import type { AsyncContext, Context, Element } from 'gpui-kit';
+import {
+  type AsyncContext,
+  type Context,
+  type Element,
+  View,
+  div
+} from 'gpui-kit';
 import type { Props } from 'gpui-shell';
-import type { Theme } from 'gpui-base';
-import { Popover, h_flex, v_flex } from 'gpui-base';
+import { Popover, type Theme, h_flex, v_flex } from 'gpui-base';
 import {
   Button,
+  type ButtonElement,
   ErrorAlert,
   Icon,
   InputGroup,
@@ -16,14 +21,13 @@ import {
   Tab,
   TabBar
 } from 'gpui-component';
-import type { ButtonElement } from 'gpui-component';
-import { call, getState, setState } from 'corona/plugin';
-import type { JsonValue } from 'corona/plugin';
+import { type JsonValue, call, setState } from 'corona/plugin';
 import { get } from 'corona/settings';
 import { closePanel } from 'corona/surface';
 import { openUri } from 'corona/desktop';
-import type { Peer, PrefKey, Recent, Snapshot } from './service.ts';
-import { CONN_TEXT, ONLINE, dot, logo, tint } from './ui.ts';
+import type { Peer, PrefKey, Snapshot } from './service.ts';
+import { CONN_TEXT, ONLINE, dot, label, logo, tint } from './ui.ts';
+import { message, recent as recentFiles, snapshot } from './state.ts';
 
 const TABS = ['Devices', 'Taildrop', 'Preferences'];
 
@@ -75,17 +79,17 @@ type Row = {
 
 /** Tailscale's state from the service, and its actions as service calls. */
 export default class Panel extends View {
-  declare tab: number;
-  declare query: string;
-  declare hideOffline: boolean;
+  declare private tab: number;
+  declare private query: string;
+  declare private hideOffline: boolean;
   /** The peer whose actions menu is open */
-  declare expanded: string | null;
-  declare sendTo: string | null;
+  declare private expanded: string | null;
+  declare private sendTo: string | null;
   /** Calls in flight, by `busyKey`, for loading buttons */
-  declare busy: Set<string>;
-  declare search: InputState;
+  declare private busy: Set<string>;
+  declare private search: InputState;
 
-  init(_props: Props | undefined, cx: AsyncContext): void {
+  public init(_props: Props | undefined, cx: AsyncContext): void {
     this.tab = 0;
     this.query = '';
     this.hideOffline = false;
@@ -97,14 +101,13 @@ export default class Panel extends View {
     cx.spawn(async () => call('refresh'));
   }
 
-  render(cx: Context): Element {
+  public render(cx: Context): Element {
     const theme = cx.theme();
-    const ts = getState('ts') as Snapshot | null;
+    const ts = snapshot();
     const conn = ts?.conn ?? 'starting';
     const online = ts?.peers.filter((peer) => peer.online).length ?? 0;
     const status =
-      (getState('msg') as string | null) ??
-      (ts ? `${online} of ${ts.peers.length} devices online` : '');
+      message() ?? (ts ? `${online} of ${ts.peers.length} devices online` : '');
 
     const root = v_flex()
       .size_full()
@@ -179,7 +182,7 @@ export default class Panel extends View {
     );
   }
 
-  header(ts: Snapshot | null, theme: Theme): Element {
+  private header(ts: Snapshot | null, theme: Theme): Element {
     const conn = ts?.conn ?? 'starting';
     return h_flex()
       .flex_none()
@@ -240,7 +243,7 @@ export default class Panel extends View {
       );
   }
 
-  connected(ts: Snapshot, theme: Theme): Element[] {
+  private connected(ts: Snapshot, theme: Theme): Element[] {
     const parts: Element[] = [];
     if (ts.self) {
       const { self } = ts;
@@ -320,7 +323,7 @@ export default class Panel extends View {
     return parts;
   }
 
-  devices(ts: Snapshot, theme: Theme): Element[] {
+  private devices(ts: Snapshot, theme: Theme): Element[] {
     const online = ts.peers.filter((peer) => peer.online).length;
     const query = this.query.trim().toLowerCase();
     const shown = ts.peers.filter(
@@ -401,7 +404,7 @@ export default class Panel extends View {
     ];
   }
 
-  peer(peer: Peer, ts: Snapshot, theme: Theme): Element {
+  private peer(peer: Peer, ts: Snapshot, theme: Theme): Element {
     const isExit = ts.exitNode === peer.id;
     const actions: Element[] = [];
     if (peer.exitOption) {
@@ -455,7 +458,7 @@ export default class Panel extends View {
   }
 
   /** The ⋮ button and its menu: copy name, ping, SSH, send file */
-  options(peer: Peer, theme: Theme): Element {
+  private options(peer: Peer, theme: Theme): Element {
     const close = (cx: Context) => {
       this.expanded = null;
       cx.notify();
@@ -551,12 +554,12 @@ export default class Panel extends View {
       );
   }
 
-  taildrop(ts: Snapshot, theme: Theme): Element[] {
+  private taildrop(ts: Snapshot, theme: Theme): Element[] {
     const folder = get('downloads');
     const waiting = ts.waiting ? `${ts.waiting} waiting · ` : '';
     const targets = ts.peers.filter((peer) => peer.online);
     const target = targets.find((peer) => peer.id === this.sendTo);
-    const recent = (getState('recent') as Recent[] | null) ?? [];
+    const recent = recentFiles();
     return [
       row(theme, {
         actions: [
@@ -578,7 +581,7 @@ export default class Panel extends View {
             new Select(
               'ts-send-to',
               () => targets.map((peer) => ({ id: peer.id, label: peer.name })),
-              (item) => div().child((item as { label: string }).label),
+              (item) => div().child(label(item)),
               (id, cx) => {
                 this.sendTo = id;
                 cx.notify();
@@ -621,7 +624,7 @@ export default class Panel extends View {
     ];
   }
 
-  preferences(ts: Snapshot, theme: Theme): Element[] {
+  private preferences(ts: Snapshot, theme: Theme): Element[] {
     return PREFS.map((pref) =>
       row(theme, {
         actions: [
@@ -647,7 +650,7 @@ export default class Panel extends View {
   }
 
   /** A labelled button that runs service `method` */
-  action(
+  private action(
     id: string,
     label: string,
     method: string,
@@ -663,7 +666,7 @@ export default class Panel extends View {
   }
 
   /** Calls the service; it reports the outcome through state `msg` */
-  run(method: string, args: JsonValue, cx: Context, key = method): void {
+  public run(method: string, args: JsonValue, cx: Context, key = method): void {
     if (this.busy.has(key)) {
       return;
     }
@@ -676,12 +679,12 @@ export default class Panel extends View {
     });
   }
 
-  copy(text: string, what: string, cx: Context): void {
+  private copy(text: string, what: string, cx: Context): void {
     cx.write_to_clipboard(text);
     setState('msg', `Copied ${what}`);
   }
 
-  open(url: string): void {
+  private open(url: string): void {
     const error = openUri(url);
     setState(
       'msg',
@@ -784,8 +787,11 @@ function menuItem(
 }
 
 /** `2026-10-10 17:42`, local time */
+function pad(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
 function seen(iso: string): string {
   const date = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }

@@ -1,5 +1,4 @@
-import { div } from 'gpui-kit';
-import type { Color } from 'gpui-kit';
+import { type Color, div } from 'gpui-kit';
 import type { Status } from './service.ts';
 
 export const ONLINE: Color = '#3fbf6f';
@@ -20,7 +19,7 @@ export function dot(color: Color) {
 
 /** `color` at `alpha`, for the tinted surfaces the theme has no token for */
 export function tint(color: Color, alpha: number): Color {
-  return `${color.slice(0, 7)}${Math.round(alpha * 255)
+  return `#${color.slice(1, 7)}${Math.round(alpha * 255)
     .toString(16)
-    .padStart(2, '0')}` as Color;
+    .padStart(2, '0')}`;
 }

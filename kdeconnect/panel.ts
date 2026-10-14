@@ -1,22 +1,30 @@
-import { View, div } from 'gpui-kit';
-import type { AsyncContext, Context, Element, NativeElement } from 'gpui-kit';
+import {
+  type AsyncContext,
+  type Context,
+  type Element,
+  type NativeElement,
+  View,
+  div
+} from 'gpui-kit';
 import type { Props } from 'gpui-shell';
-import type { Theme } from 'gpui-base';
 import {
   Slider,
   SliderIndicator,
   SliderState,
   SliderThumb,
   SliderTrack,
+  type SliderValue,
+  type Theme,
   h_flex,
   v_flex
 } from 'gpui-base';
-import type { SliderValue } from 'gpui-base';
 import {
   Button,
+  type ButtonElement,
   Icon,
   InputGroup,
   InputGroupAddon,
+  type InputGroupElement,
   InputGroupInput,
   InputState,
   Select,
@@ -24,12 +32,11 @@ import {
   Tab,
   TabBar
 } from 'gpui-component';
-import type { ButtonElement, InputGroupElement } from 'gpui-component';
-import { call, getState } from 'corona/plugin';
-import type { JsonValue } from 'corona/plugin';
+import { type JsonValue, call } from 'corona/plugin';
 import { closePanel } from 'corona/surface';
-import type { Cast, CastOptions, Device, Snapshot } from './service.ts';
-import { DEVICE_ICON, ONLINE, dot, tint } from './ui.ts';
+import type { CastOptions, Device, Snapshot } from './service.ts';
+import { DEVICE_ICON, ONLINE, dot, label, tint } from './ui.ts';
+import { castStates, snapshot, statusLine } from './state.ts';
 
 const TABS = ['Controls', 'Cast', 'Messages', 'Devices'];
 
@@ -62,33 +69,33 @@ type Favorite = {
 
 /** KDE Connect's devices from the service, and their actions as service calls. */
 export default class Panel extends View {
-  declare tab: number;
-  declare selected: string | null;
-  declare busy: Set<string>;
-  declare favorites: Favorite[];
-  declare editMode: boolean;
+  declare private tab: number;
+  declare private selected: string | null;
+  declare private busy: Set<string>;
+  declare private favorites: Favorite[];
+  declare private editMode: boolean;
   /** The favorite being renamed, by number */
-  declare editing: string | null;
-  declare dest: string;
-  declare text: string;
-  declare destInput: InputState;
-  declare textInput: InputState;
-  declare nameInput: InputState;
-  declare castOptions: CastOptions;
-  declare preset: number;
-  declare adbSetup: boolean;
+  declare private editing: string | null;
+  declare private dest: string;
+  declare private text: string;
+  declare private destInput: InputState;
+  declare private textInput: InputState;
+  declare private nameInput: InputState;
+  declare private castOptions: CastOptions;
+  declare private preset: number;
+  declare private adbSetup: boolean;
   /** 0 pair, 1 connect */
-  declare adbMode: number;
-  declare pairPort: InputState;
-  declare pairPin: InputState;
-  declare connectAddress: InputState;
-  declare volume: SliderState;
-  declare seek: SliderState;
-  declare quality: Record<(typeof QUALITY)[number]['key'], SliderState>;
+  declare private adbMode: number;
+  declare private pairPort: InputState;
+  declare private pairPin: InputState;
+  declare private connectAddress: InputState;
+  declare private volume: SliderState;
+  declare private seek: SliderState;
+  declare private quality: Record<string, SliderState>;
   /** A slider being dragged is not moved by the state */
-  declare dragging: SliderState | null;
+  declare private dragging: SliderState | null;
 
-  init(_props: Props | undefined, cx: AsyncContext): void {
+  public init(_props: Props | undefined, cx: AsyncContext): void {
     this.tab = 0;
     this.selected = null;
     this.busy = new Set();
@@ -141,7 +148,7 @@ export default class Panel extends View {
           }
         )
       ])
-    ) as Panel['quality'];
+    );
 
     cx.spawn(async (cx) => {
       // The signals keep the state current; this catches up on whatever was missed while closed
@@ -167,7 +174,7 @@ export default class Panel extends View {
   }
 
   /** A slider whose `release` runs `commit`, and whose drag stops the state moving it */
-  slider(
+  private slider(
     options: { min: number; max: number; step?: number; value?: number },
     commit: (value: number) => void,
     change?: (value: number, cx: Context) => void
@@ -185,10 +192,8 @@ export default class Panel extends View {
   }
 
   /** The device the panel shows: the one picked, else the first reachable paired one */
-  device(): Device | null {
-    const paired = ((getState('kc') as Snapshot | null)?.devices ?? []).filter(
-      (d) => d.paired
-    );
+  private device(): Device | null {
+    const paired = (snapshot()?.devices ?? []).filter((d) => d.paired);
     return (
       paired.find((d) => d.id === this.selected) ??
       paired.find((d) => d.reachable) ??
@@ -197,14 +202,14 @@ export default class Panel extends View {
     );
   }
 
-  render(cx: Context): Element {
+  public render(cx: Context): Element {
     const theme = cx.theme();
-    const snap = getState('kc') as Snapshot | null;
+    const snap = snapshot();
     const device = this.device();
     const nearby = (snap?.devices ?? []).filter(
       (d) => !d.paired && (d.reachable || d.pairRequestedByPeer)
     );
-    const status = getState('msg') as string | null;
+    const status = statusLine();
 
     const root = v_flex().size_full().p_2().gap_3().child(this.header(theme));
     if (!snap?.running) {
@@ -264,7 +269,7 @@ export default class Panel extends View {
   }
 
   /** Moves the sliders to the device's values, unless one is being dragged */
-  sync(device: Device): void {
+  private sync(device: Device): void {
     if (
       this.dragging !== this.volume &&
       device.volume !== null &&
@@ -283,7 +288,7 @@ export default class Panel extends View {
     }
   }
 
-  header(theme: Theme): Element {
+  private header(theme: Theme): Element {
     return h_flex()
       .flex_none()
       .items_center()
@@ -305,7 +310,7 @@ export default class Panel extends View {
   }
 
   /** The device select and its status line: reachability, battery, network, address */
-  picker(snap: Snapshot, device: Device, theme: Theme): Element {
+  private picker(snap: Snapshot, device: Device, theme: Theme): Element {
     const paired = snap.devices.filter((d) => d.paired);
     const info: Element[] = [
       h_flex()
@@ -361,7 +366,7 @@ export default class Panel extends View {
               id: d.id,
               label: `${d.name} · ${d.reachable ? 'Connected' : 'Offline'}`
             })),
-          (row) => div().child((row as { label: string }).label),
+          (row) => div().child(label(row)),
           (id, cx) => this.select(id, cx)
         )
           .w_full()
@@ -384,7 +389,7 @@ export default class Panel extends View {
       );
   }
 
-  select(id: string, cx: Context): void {
+  private select(id: string, cx: Context): void {
     this.selected = id;
     cx.notify();
     const device = this.device();
@@ -393,7 +398,7 @@ export default class Panel extends View {
     }
   }
 
-  controls(device: Device, theme: Theme): Element[] {
+  private controls(device: Device, theme: Theme): Element[] {
     const off = !device.reachable;
     const { id } = device;
     const actions: [string, string, string][] = [
@@ -562,12 +567,10 @@ export default class Panel extends View {
     ];
   }
 
-  cast(device: Device, theme: Theme): Element[] {
+  private cast(device: Device, theme: Theme): Element[] {
     const off = !device.reachable;
     const { id } = device;
-    const state = ((getState('cast') as Record<string, Cast> | null) ?? {})[
-      id
-    ] ?? {
+    const state = castStates()[id] ?? {
       casting: false,
       serial: null
     };
@@ -813,7 +816,7 @@ export default class Panel extends View {
     ];
   }
 
-  messages(device: Device, theme: Theme): Element[] {
+  private messages(device: Device, theme: Theme): Element[] {
     const off = !device.reachable;
     const dest = this.dest.trim();
     const query = dest.toLowerCase();
@@ -1030,7 +1033,7 @@ export default class Panel extends View {
     ];
   }
 
-  devices(snap: Snapshot, theme: Theme): Element[] {
+  private devices(snap: Snapshot, theme: Theme): Element[] {
     const current = this.device();
     const paired = snap.devices.filter((d) => d.paired);
     const nearby = snap.devices.filter(
@@ -1163,18 +1166,18 @@ export default class Panel extends View {
     return parts;
   }
 
-  rename(number: string, name: string): void {
+  private rename(number: string, name: string): void {
     this.editing = number;
     this.nameInput.set_value(name);
   }
 
-  saveFavorites(favorites: Favorite[]): void {
+  private saveFavorites(favorites: Favorite[]): void {
     this.favorites = favorites;
     store('favorites', favorites);
   }
 
   /** A small labelled button that runs service `method` */
-  action(
+  private action(
     id: string,
     label: string,
     method: string,
@@ -1189,7 +1192,7 @@ export default class Panel extends View {
   }
 
   /** Calls the service, which reports the outcome through state `msg`; `done` runs on success */
-  run(
+  public run(
     method: string,
     args: JsonValue,
     cx: Context,
@@ -1391,7 +1394,7 @@ function presetOf(o: CastOptions): number {
 function load<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
+    return raw ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
   }

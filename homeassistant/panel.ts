@@ -1,19 +1,26 @@
-import { View, div } from 'gpui-kit';
-import type { AsyncContext, Color, Context, Element } from 'gpui-kit';
+import {
+  type AsyncContext,
+  type Color,
+  type Context,
+  type Element,
+  View,
+  div
+} from 'gpui-kit';
 import type { Props } from 'gpui-shell';
-import type { Theme } from 'gpui-base';
 import {
   Slider,
   SliderIndicator,
   SliderState,
   SliderThumb,
   SliderTrack,
+  type SliderValue,
+  type Theme,
   h_flex,
   v_flex
 } from 'gpui-base';
-import type { SliderValue } from 'gpui-base';
 import {
   Button,
+  type ButtonElement,
   Icon,
   InputGroup,
   InputGroupAddon,
@@ -21,13 +28,12 @@ import {
   InputState,
   Switch
 } from 'gpui-component';
-import type { ButtonElement } from 'gpui-component';
-import { call, getState } from 'corona/plugin';
-import type { JsonValue } from 'corona/plugin';
+import { type JsonValue, call } from 'corona/plugin';
 import { get } from 'corona/settings';
 import { closePanel } from 'corona/surface';
 import type { Entity, Listed, Snapshot, Status } from './service.ts';
 import { AMBER, STATUS, dot, tint } from './ui.ts';
+import { isListed, list, snapshot, statusLine } from './state.ts';
 
 const SECTIONS: [string, string[]][] = [
   ['Lights', ['light']],
@@ -108,14 +114,14 @@ type Draft = {
 
 /** The pinned entities from the service, their controls, and Manage entities. */
 export default class Panel extends View {
-  declare browsing: boolean;
-  declare all: Listed[] | null;
-  declare query: string;
-  declare search: InputState;
-  declare draft: Draft | null;
-  declare busy: Set<string>;
+  declare private browsing: boolean;
+  declare private all: Listed[] | null;
+  declare private query: string;
+  declare private search: InputState;
+  declare private draft: Draft | null;
+  declare private busy: Set<string>;
 
-  init(_props: Props | undefined, _cx: AsyncContext): void {
+  public init(_props: Props | undefined, _cx: AsyncContext): void {
     this.browsing = false;
     this.all = null;
     this.query = '';
@@ -124,9 +130,9 @@ export default class Panel extends View {
     this.busy = new Set();
   }
 
-  render(cx: Context): Element {
+  public render(cx: Context): Element {
     const theme = cx.theme();
-    const snap = (getState('ha') as Snapshot | null) ?? {
+    const snap = snapshot() ?? {
       entities: {},
       error: null,
       status: 'connecting'
@@ -139,11 +145,11 @@ export default class Panel extends View {
     if (this.browsing) {
       root.children(this.browser(theme));
     } else if (snap.status !== 'connected') {
-      root.child(message(snap, theme));
+      root.child(message(snap.status, snap.error, theme));
     } else {
       root.child(this.list(snap, theme));
     }
-    const status = getState('msg') as string | null;
+    const status = statusLine();
     if (status) {
       root.child(
         div()
@@ -158,7 +164,7 @@ export default class Panel extends View {
     return root;
   }
 
-  header(snap: Snapshot, theme: Theme): Element {
+  private header(snap: Snapshot, theme: Theme): Element {
     const [text, color] = STATUS[snap.status];
     const pinned = get('entities').length;
     const row = h_flex().flex_none().items_center().gap_2p5().px_0p5();
@@ -212,7 +218,7 @@ export default class Panel extends View {
     );
   }
 
-  list(snap: Snapshot, theme: Theme): Element {
+  private list(snap: Snapshot, theme: Theme): Element {
     const pinned = get('entities').filter((id) => snap.entities[id]);
     const sections = SECTIONS.map(([title, domains]) => {
       const rows = pinned
@@ -261,7 +267,7 @@ export default class Panel extends View {
       );
   }
 
-  row(e: Entity, theme: Theme): Element {
+  private row(e: Entity, theme: Theme): Element {
     const kind = domain(e.id);
     const name = String(e.attributes.friendly_name ?? e.id);
     // `unknown` is a button never pressed, still pressable
@@ -409,7 +415,7 @@ export default class Panel extends View {
       );
   }
 
-  browser(theme: Theme): Element[] {
+  private browser(theme: Theme): Element[] {
     const all = this.all ?? [];
     const pinned = new Set(get('entities'));
     const query = this.query.trim().toLowerCase();
@@ -500,7 +506,7 @@ export default class Panel extends View {
   }
 
   /** Opens Manage entities with every entity, fetched once per opening */
-  browse(cx: Context): void {
+  private browse(cx: Context): void {
     if (this.busy.has('browse')) {
       return;
     }
@@ -509,8 +515,8 @@ export default class Panel extends View {
     cx.spawn(async (cx) => {
       const answer = await call('browse');
       this.busy.delete('browse');
-      if (Array.isArray(answer)) {
-        this.all = answer as Listed[];
+      if (isListed(answer)) {
+        this.all = answer;
         this.browsing = true;
       }
       cx.notify();
@@ -518,7 +524,7 @@ export default class Panel extends View {
   }
 
   /** Opens a light's sliders at its current values, or closes them */
-  expand(e: Entity, cx: Context): void {
+  private expand(e: Entity, cx: Context): void {
     if (this.draft?.id === e.id) {
       for (const state of [this.draft.bri, this.draft.ct, this.draft.hue]) {
         state?.release();
@@ -575,7 +581,7 @@ export default class Panel extends View {
       draft.hue = make({
         max: 360,
         min: 0,
-        value: Math.round(Number((a.hs_color as number[] | null)?.[0] ?? 0))
+        value: Math.round(Number(list(a.hs_color)[0] ?? 0))
       });
     }
     this.draft = draft;
@@ -583,7 +589,7 @@ export default class Panel extends View {
   }
 
   /** Turns the light on at the sliders' values */
-  apply(e: Entity, cx: Context): void {
+  private apply(e: Entity, cx: Context): void {
     const d = this.draft;
     if (!d) {
       return;
@@ -598,20 +604,19 @@ export default class Panel extends View {
     }
     if (
       d.hue &&
-      Number((e.attributes.hs_color as number[] | null)?.[0] ?? -1) !==
-        single(d.hue.value())
+      Number(list(e.attributes.hs_color)[0] ?? -1) !== single(d.hue.value())
     ) {
       delete data.color_temp_kelvin;
       data.hs_color = [
         single(d.hue.value()),
-        Number((e.attributes.hs_color as number[] | null)?.[1] ?? 100)
+        Number(list(e.attributes.hs_color)[1] ?? 100)
       ];
     }
     d.dirty = false;
     this.service(e.id, 'light', 'turn_on', data, cx);
   }
 
-  toggle(e: Entity, on: boolean, cx: Context): void {
+  private toggle(e: Entity, on: boolean, cx: Context): void {
     const kind = domain(e.id);
     const [service, serviceDomain] =
       kind === 'lock'
@@ -622,7 +627,7 @@ export default class Panel extends View {
     this.service(e.id, serviceDomain, service, null, cx);
   }
 
-  service(
+  private service(
     entity: string,
     domain: string,
     service: string,
@@ -633,7 +638,7 @@ export default class Panel extends View {
   }
 
   /** Calls the service; errors come back through state `msg` */
-  run(method: string, args: JsonValue, cx: Context, key = method): void {
+  public run(method: string, args: JsonValue, cx: Context, key = method): void {
     if (this.busy.has(key)) {
       return;
     }
@@ -658,11 +663,11 @@ function isOn(e: Entity): boolean {
 }
 
 function lightCaps(e: Entity): { bri: boolean; ct: boolean; hue: boolean } {
-  const modes = (e.attributes.supported_color_modes as string[] | null) ?? [];
+  const modes = list(e.attributes.supported_color_modes);
   return {
     bri: modes.some((m) => m !== 'onoff'),
     ct: modes.includes('color_temp'),
-    hue: modes.some((m) => COLOR_MODES.has(m))
+    hue: modes.some((m) => typeof m === 'string' && COLOR_MODES.has(m))
   };
 }
 
@@ -788,7 +793,11 @@ function capital(text: string): string {
 }
 
 /** The centered state for every status but connected */
-function message(snap: Snapshot, theme: Theme): Element {
+function message(
+  status: Exclude<Status, 'connected'>,
+  error: string | null,
+  theme: Theme
+): Element {
   const texts: Record<
     Exclude<Status, 'connected'>,
     [string, string, string, boolean]
@@ -814,12 +823,11 @@ function message(snap: Snapshot, theme: Theme): Element {
     unreachable: [
       'wifi-off',
       'Home Assistant is unreachable',
-      `${snap.error ? `${snap.error}. ` : ''}Check the URL in the plugin settings and that the server is online. Retrying automatically.`,
+      `${error ? `${error}. ` : ''}Check the URL in the plugin settings and that the server is online. Retrying automatically.`,
       true
     ]
   };
-  const [iconName, title, body, bad] =
-    texts[snap.status as Exclude<Status, 'connected'>];
+  const [iconName, title, body, bad] = texts[status];
   return v_flex()
     .flex_1()
     .items_center()

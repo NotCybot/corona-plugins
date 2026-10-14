@@ -1,31 +1,35 @@
-import { fail, getState, nextCall, reply, setState } from 'corona/plugin';
-import type { Call, JsonValue } from 'corona/plugin';
+import {
+  type Call,
+  type JsonValue,
+  fail,
+  getState,
+  nextCall,
+  reply,
+  setState
+} from 'corona/plugin';
 import { nextAction, notify } from 'corona/notifications';
 import {
+  type Rule,
   call as dbusCall,
   getProperty,
   nameHasOwner,
   nextSignal,
   subscribe
 } from 'corona/dbus';
-import type { Rule } from 'corona/dbus';
 import * as secrets from 'corona/secrets';
-import { readFile } from 'fs/promises';
+import { open, readFile } from 'fs/promises';
 import {
   listenRedirect,
   nextRedirect,
   openUri,
   pickFiles
 } from 'corona/desktop';
-import { open } from 'fs/promises';
 import { nextSleepEvent } from 'corona/power';
 import { closePanel, openPanel } from 'corona/surface';
 import { get, set, setOptions } from 'corona/settings';
 import { t } from 'corona/i18n';
-import process from 'process';
-import type { ChildProcess } from 'process';
-import { connect } from 'net';
-import type { Socket } from 'net';
+import process, { type ChildProcess } from 'process';
+import { type Socket, connect } from 'net';
 import { Buffer } from 'buffer';
 import type { AsyncContext } from 'gpui-kit';
 import { message, ok } from './util.ts';
@@ -67,7 +71,8 @@ export default async function main(cx: AsyncContext): Promise<void> {
   let beats = 0;
   cx.timer.every(1000, () => {
     if (get('heartbeat')) {
-      setState('heartbeat', ++beats);
+      beats += 1;
+      setState('heartbeat', beats);
     }
   });
   // KDE Connect only emits custom signals (battery, reachability, ...)
@@ -206,7 +211,9 @@ async function waitForAction(id: number): Promise<JsonValue> {
       continue;
     }
     const picked =
-      action.text == null ? action.key : `${action.key}: ${action.text}`;
+      action.text === null || action.text === undefined
+        ? action.key
+        : `${action.key}: ${action.text}`;
     setState('action', t('notify.picked', { id, key: picked }));
     return { id, key: action.key, text: action.text ?? null };
   }
@@ -254,7 +261,7 @@ type TailscaleStatus = {
 
 /** LocalAPI over the daemon's unix socket; HTTP/1.0 so the body ends at EOF, unchunked */
 async function tailscale(): Promise<JsonValue> {
-  let socket: Socket;
+  let socket: Socket | null = null;
   try {
     socket = await connect({ path: TAILSCALE });
   } catch (error) {
@@ -292,7 +299,7 @@ async function tailscale(): Promise<JsonValue> {
     // 403 without operator rights: `tailscale set --operator=$USER`
     return { available: true, body: body.slice(0, 300), status: statusLine };
   }
-  const status = JSON.parse(body) as TailscaleStatus;
+  const status: TailscaleStatus = JSON.parse(body);
   return {
     available: true,
     backend: status.BackendState ?? null,
@@ -317,7 +324,7 @@ async function fetchBoth(): Promise<JsonValue> {
       chunk !== null;
       chunk = await stream.read()
     ) {
-      chunks++;
+      chunks += 1;
       streamed += chunk.length;
     }
   } finally {
@@ -380,12 +387,12 @@ async function sleepEvents(): Promise<void> {
 async function richNotify(): Promise<JsonValue> {
   const id = ok(
     await notify({
-      summary: t('notify.rich_summary'),
+      actions: [{ key: 'open', label: t('notify.open') }],
       body: t('notify.rich_body'),
       // The PNG through the `fs.read` grant, sent as the notification's picture
       image: await readFile('assets/gradient.png'),
-      actions: [{ key: 'open', label: t('notify.open') }],
       reply: { placeholder: t('notify.reply_placeholder') },
+      summary: t('notify.rich_summary'),
       timeout: 30_000
     })
   );
@@ -458,7 +465,7 @@ async function unixFetch(): Promise<JsonValue> {
   if (!response.ok) {
     return { body: text.slice(0, 300), status: response.status };
   }
-  const status = JSON.parse(text) as TailscaleStatus;
+  const status: TailscaleStatus = JSON.parse(text);
   return {
     backend: status.BackendState ?? null,
     host: status.Self?.HostName ?? null,
@@ -488,11 +495,11 @@ async function ipnBus(): Promise<JsonValue> {
   } finally {
     stream.close();
   }
-  const line = Buffer.from(bytes).toString('utf8').split('\n')[0];
+  const [line] = Buffer.from(bytes).toString('utf8').split('\n');
   if (stream.status !== 200) {
     return { body: line.slice(0, 300), status: stream.status };
   }
-  const notify = JSON.parse(line) as { State?: number };
+  const notify: { State?: number } = JSON.parse(line);
   return { state: notify.State ?? null, status: stream.status };
 }
 

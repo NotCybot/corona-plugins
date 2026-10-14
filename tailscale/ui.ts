@@ -1,5 +1,4 @@
-import { div } from 'gpui-kit';
-import type { Color, Element } from 'gpui-kit';
+import { type Color, type Element, div } from 'gpui-kit';
 import { h_flex, v_flex } from 'gpui-base';
 import type { Conn } from './service.ts';
 
@@ -29,9 +28,16 @@ export function dot(color: Color) {
 
 /** `color` at `alpha`, for the tinted surfaces the theme has no token for */
 export function tint(color: Color, alpha: number): Color {
-  return `${color.slice(0, 7)}${Math.round(alpha * 255)
+  return `#${color.slice(1, 7)}${Math.round(alpha * 255)
     .toString(16)
-    .padStart(2, '0')}` as Color;
+    .padStart(2, '0')}`;
+}
+
+/** The label of a `Select` row, which the runtime hands back untyped */
+export function label(row: unknown): string {
+  return typeof row === 'object' && row !== null && 'label' in row
+    ? String(row.label)
+    : '';
 }
 
 export const CONN_TEXT: Record<Conn, string> = {

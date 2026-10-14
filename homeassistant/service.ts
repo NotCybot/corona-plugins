@@ -1,10 +1,16 @@
-import { fail, nextCall, reply, setState } from 'corona/plugin';
-import type { Call, JsonValue } from 'corona/plugin';
+import {
+  type Call,
+  type JsonValue,
+  fail,
+  nextCall,
+  reply,
+  setState
+} from 'corona/plugin';
 import { get, nextChange, set } from 'corona/settings';
 import * as secrets from 'corona/secrets';
-import { WebSocket } from 'websocket';
-import type { WebSocketSocket } from 'websocket';
+import { WebSocket, type WebSocketSocket } from 'websocket';
 import type { AsyncContext } from 'gpui-kit';
+import { isObject } from './state.ts';
 
 export type Status =
   | 'unconfigured'
@@ -31,16 +37,41 @@ export type Listed = {
 };
 
 type Args = Record<string, JsonValue>;
+/** What Home Assistant sends over the websocket */
 type Message = {
   id?: number;
   type: string;
-  [key: string]: JsonValue | undefined;
+  success?: boolean;
+  result?: JsonValue;
+  error?: { message?: string };
+  event?: Event;
+};
+/** A subscribe_entities event: `a` added, `c` changed, `r` removed */
+type Event = {
+  a?: Record<string, Compressed>;
+  c?: Record<string, { '+'?: Compressed; '-'?: { a?: string[] } }>;
+  r?: string[];
+};
+/** An entity as get_states answers it */
+type State = {
+  entity_id: string;
+  attributes: { friendly_name?: string };
 };
 /** Subscribe_entities' compressed state: `s` state, `a` attributes */
 type Compressed = {
   s?: string;
   a?: Record<string, JsonValue>;
 };
+
+function isStates(value: JsonValue): value is State[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (e) =>
+        isObject(e) && typeof e.entity_id === 'string' && isObject(e.attributes)
+    )
+  );
+}
 
 let snapshot: Snapshot = { entities: {}, error: null, status: 'connecting' };
 let session: Session | null = null;
@@ -54,20 +85,16 @@ function publish(patch: Partial<Snapshot>): void {
 const methods: Record<string, (args: Args) => Promise<JsonValue>> = {
   /** Every entity, for Manage entities: one `get_states`, not kept */
   browse: async () => {
-    const states = (await live().request({ type: 'get_states' })) as Entity[] &
-      { entity_id: string }[];
+    const states = await live().request({ type: 'get_states' });
+    if (!isStates(states)) {
+      throw new Error('unexpected get_states answer');
+    }
     return states
-      .map((e) => {
-        const raw = e as unknown as {
-          entity_id: string;
-          attributes: { friendly_name?: string };
-        };
-        return {
-          id: raw.entity_id,
-          name: raw.attributes.friendly_name ?? raw.entity_id
-        };
-      })
-      .sort((a, b) => a.id.localeCompare(b.id));
+      .map((e) => ({
+        id: e.entity_id,
+        name: e.attributes.friendly_name ?? e.entity_id
+      }))
+      .toSorted((a, b) => a.id.localeCompare(b.id));
   },
   call: async ({ domain, service, entity, data }) => {
     await live().request({
@@ -108,7 +135,7 @@ async function answer({ id, method, args }: Call): Promise<void> {
     return;
   }
   try {
-    reply(id, await handler((args ?? {}) as Args));
+    reply(id, await handler(isObject(args) ? args : {}));
   } catch (error) {
     setState('msg', `✗ ${message(error)}`);
     fail(id, message(error));
@@ -141,7 +168,9 @@ async function follow(): Promise<void> {
     } else if (change.key === 'entities' && 'value' in change) {
       void session
         ?.subscribe(change.value)
-        .catch((error) => console.warn(`homeassistant: ${message(error)}`));
+        .catch((error: unknown) =>
+          console.warn(`homeassistant: ${message(error)}`)
+        );
     }
   }
 }
@@ -199,27 +228,27 @@ async function authenticate(
   socket: WebSocketSocket,
   token: string
 ): Promise<boolean> {
-  const hello = JSON.parse(String(await socket.read())) as Message;
+  const hello: Message = JSON.parse(String(await socket.read()));
   if (hello.type !== 'auth_required') {
     throw new Error(`unexpected ${hello.type} from Home Assistant`);
   }
   await socket.write(JSON.stringify({ access_token: token, type: 'auth' }));
-  const answer = JSON.parse(String(await socket.read())) as Message;
+  const answer: Message = JSON.parse(String(await socket.read()));
   return answer.type === 'auth_ok';
 }
 
 /** One authenticated connection: numbered requests, and the pinned entities' subscription */
 class Session {
-  declare socket: WebSocketSocket;
-  declare next: number;
-  declare pending: Map<
+  declare private readonly socket: WebSocketSocket;
+  declare private next: number;
+  declare private readonly pending: Map<
     number,
     { resolve: (value: JsonValue) => void; reject: (error: Error) => void }
   >;
   /** The id of the running subscribe_entities */
-  declare subscription: number | null;
+  declare private subscription: number | null;
 
-  constructor(socket: WebSocketSocket) {
+  public constructor(socket: WebSocketSocket) {
     this.socket = socket;
     this.next = 1;
     this.pending = new Map();
@@ -227,13 +256,14 @@ class Session {
   }
 
   /** Reads until the connection closes */
-  async run(pinned: string[]): Promise<void> {
-    void this.subscribe(pinned).catch((error) =>
+  public async run(pinned: string[]): Promise<void> {
+    void this.subscribe(pinned).catch((error: unknown) =>
       setState('msg', `✗ ${message(error)}`)
     );
     try {
       while (true) {
-        this.receive(JSON.parse(String(await this.socket.read())) as Message);
+        const msg: Message = JSON.parse(String(await this.socket.read()));
+        this.receive(msg);
       }
     } finally {
       for (const { reject } of this.pending.values()) {
@@ -243,7 +273,7 @@ class Session {
     }
   }
 
-  receive(msg: Message): void {
+  private receive(msg: Message): void {
     if (msg.type === 'result') {
       const waiter = this.pending.get(msg.id);
       this.pending.delete(msg.id);
@@ -253,30 +283,19 @@ class Session {
       if (msg.success) {
         waiter.resolve(msg.result ?? null);
       } else {
-        waiter.reject(
-          new Error(
-            String(
-              (msg.error as { message?: string })?.message ?? 'request failed'
-            )
-          )
-        );
+        waiter.reject(new Error(msg.error?.message ?? 'request failed'));
       }
     } else if (msg.type === 'event' && msg.id === this.subscription) {
-      apply(
-        msg.event as {
-          a?: Record<string, Compressed>;
-          c?: Record<string, { '+'?: Compressed; '-'?: { a?: string[] } }>;
-          r?: string[];
-        }
-      );
+      apply(msg.event);
     }
   }
 
-  async request(msg: {
+  public async request(msg: {
     type: string;
     [key: string]: JsonValue;
   }): Promise<JsonValue> {
-    const id = this.next++;
+    const id = this.next;
+    this.next += 1;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { reject, resolve });
       this.socket
@@ -289,7 +308,7 @@ class Session {
   }
 
   /** Swaps the subscription for one over `pinned`; its first event is their whole state */
-  async subscribe(pinned: string[]): Promise<void> {
+  public async subscribe(pinned: string[]): Promise<void> {
     if (this.subscription !== null) {
       const old = this.subscription;
       this.subscription = null;
@@ -307,17 +326,13 @@ class Session {
     await this.request({ entity_ids: pinned, type: 'subscribe_entities' });
   }
 
-  close(): void {
+  public close(): void {
     void this.socket.close().catch(() => {});
   }
 }
 
 /** Applies a subscribe_entities event: `a` added, `c` changed (`+` set, `-` removed attributes), `r` removed */
-function apply(event: {
-  a?: Record<string, Compressed>;
-  c?: Record<string, { '+'?: Compressed; '-'?: { a?: string[] } }>;
-  r?: string[];
-}): void {
+function apply(event: Event): void {
   const entities = { ...snapshot.entities };
   for (const [id, e] of Object.entries(event.a ?? {})) {
     entities[id] = { attributes: e.a ?? {}, id, state: e.s ?? 'unknown' };

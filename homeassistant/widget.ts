@@ -1,16 +1,14 @@
-import { View, div } from 'gpui-kit';
-import type { Context, Element } from 'gpui-kit';
+import { type Context, type Element, View, div } from 'gpui-kit';
 import { Icon } from 'gpui-component';
-import { getState } from 'corona/plugin';
 import { bar, togglePanel } from 'corona/surface';
-import type { Snapshot } from './service.ts';
+import { snapshot } from './state.ts';
 import { STATUS } from './ui.ts';
 
 /** A house, dimmed unless connected; opens and closes the panel. */
 export default class Widget extends View {
-  render(cx: Context): Element {
+  public render(cx: Context): Element {
     const theme = cx.theme();
-    const status = (getState('ha') as Snapshot | null)?.status ?? 'connecting';
+    const status = snapshot()?.status ?? 'connecting';
     // Like corona's own bar buttons: a 16 px icon in a round 24 px button,
     // Secondary, ghost without a pill of its own, danger when it needs you.
     // A div: the runtime refuses `rounded_full` on a component Button.
