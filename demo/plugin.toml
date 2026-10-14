@@ -39,7 +39,7 @@ default = "normal"
 options = [
   { value = "low", label = "Low" },
   { value = "normal", label = "Normal" },
-  { value = "critical", label = "Critical" },
+  { value = "critical", label = "Critical" }
 ]
 
 # entered in the settings app, kept in the keyring; read with `corona/secrets.get("token")`
@@ -60,7 +60,15 @@ default = "none"
 [capabilities]
 corona = ["notifications", "secrets", "desktop", "power"]
 # the PNG read as bytes for `image(Uint8Array)`; file handles write into the data dir
-fs = { read = ["${pluginDir}", "${dataDir}"], write = ["${dataDir}"], execute = ["sh", "date"] }
+fs = { read = [
+  "${pluginDir}",
+  "${dataDir}"
+], write = [
+  "${dataDir}"
+], execute = [
+  "sh",
+  "date"
+] }
 # children get only these host variables; `sleep` inside `sh -c` needs the host's PATH
 process = { env = ["PATH", "HOME"] }
 network = { hosts = ["example.com"], unix = ["/run/tailscale/tailscaled.sock"] }

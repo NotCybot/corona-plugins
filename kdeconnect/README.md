@@ -6,7 +6,7 @@ A bar widget and panel for KDE Connect: the phone's battery and network, quick a
 
 1. Run `kdeconnectd` and pair a phone (from this panel's **Devices** tab, or from KDE Connect itself).
 2. Enable the plugin and add the widget `kdeconnect:phone` to a bar. Click it to open the panel `kdeconnect:main`.
-3. For **Cast**: install `adb` and `scrcpy`, turn on *Wireless debugging* on the phone, then **Set up** → **Pair** with the pairing port and PIN the phone shows, and **Connect** with the debug port.
+3. For **Cast**: install `adb` and `scrcpy`, turn on _Wireless debugging_ on the phone, then **Set up** → **Pair** with the pairing port and PIN the phone shows, and **Connect** with the debug port.
 
 ## How it works
 

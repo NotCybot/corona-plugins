@@ -5,7 +5,12 @@
 export type Failure = { message: string };
 
 export function failed(value: unknown): value is Failure {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && "message" in value;
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    'message' in value
+  );
 }
 
 /** `value` without its failure, which is thrown, so one `try` covers both conventions. */

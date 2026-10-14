@@ -1,18 +1,18 @@
 _version: 2
 widget:
   label:
-    en: "Demo ♥ %{count}"
-    de: "Demo ♥ %{count}"
+    en: 'Demo ♥ %{count}'
+    de: 'Demo ♥ %{count}'
 panel:
   title:
     en: Corona plugin API demo
     de: Corona-Plugin-API-Demo
   greeting:
-    en: "%{greeting}! Shell language: %{language}"
-    de: "%{greeting}! Shell-Sprache: %{language}"
+    en: '%{greeting}! Shell language: %{language}'
+    de: '%{greeting}! Shell-Sprache: %{language}'
   status:
-    en: "Heartbeat %{count} (enabled: %{heartbeat}) · notification urgency: %{urgency}"
-    de: "Herzschlag %{count} (aktiv: %{heartbeat}) · Dringlichkeit: %{urgency}"
+    en: 'Heartbeat %{count} (enabled: %{heartbeat}) · notification urgency: %{urgency}'
+    de: 'Herzschlag %{count} (aktiv: %{heartbeat}) · Dringlichkeit: %{urgency}'
   service:
     en: Service calls
     de: Service-Aufrufe
@@ -26,8 +26,8 @@ panel:
     en: pick a file first
     de: zuerst eine Datei wählen
   picked:
-    en: "Picked: %{paths}"
-    de: "Gewählt: %{paths}"
+    en: 'Picked: %{paths}'
+    de: 'Gewählt: %{paths}'
   open_path:
     en: Open picked file
     de: Gewählte Datei öffnen
@@ -35,8 +35,8 @@ panel:
     en: Open example.com
     de: example.com öffnen
   opened:
-    en: "opened %{target}"
-    de: "%{target} geöffnet"
+    en: 'opened %{target}'
+    de: '%{target} geöffnet'
   copy:
     en: Copy results
     de: Ergebnisse kopieren
@@ -53,8 +53,8 @@ panel:
     en: Spawned process (shared state)
     de: Gestarteter Prozess (geteilter Zustand)
   spawned:
-    en: "pid %{pid}, exit %{exit} %{stderr}"
-    de: "PID %{pid}, Exit %{exit} %{stderr}"
+    en: 'pid %{pid}, exit %{exit} %{stderr}'
+    de: 'PID %{pid}, Exit %{exit} %{stderr}'
   signals:
     en: D-Bus signals
     de: D-Bus-Signale
@@ -62,11 +62,11 @@ panel:
     en: Notification action
     de: Benachrichtigungsaktion
   favorite:
-    en: "Favorite (dynamic select): %{favorite}"
-    de: "Favorit (dynamische Auswahl): %{favorite}"
+    en: 'Favorite (dynamic select): %{favorite}'
+    de: 'Favorit (dynamische Auswahl): %{favorite}'
   sleep:
-    en: "Sleeping: %{sleeping} · last resume: %{resumed} · service saw: %{event}"
-    de: "Schläft: %{sleeping} · letztes Aufwachen: %{resumed} · Service sah: %{event}"
+    en: 'Sleeping: %{sleeping} · last resume: %{resumed} · service saw: %{event}'
+    de: 'Schläft: %{sleeping} · letztes Aufwachen: %{resumed} · Service sah: %{event}'
 button:
   ping:
     en: Ping
@@ -121,16 +121,16 @@ notify:
     en: Corona demo
     de: Corona-Demo
   body:
-    en: "%{greeting}! Pick an action."
-    de: "%{greeting}! Wähle eine Aktion."
+    en: '%{greeting}! Pick an action.'
+    de: '%{greeting}! Wähle eine Aktion.'
   open:
     en: Open
     de: Öffnen
-  "yes":
-    en: "Yes"
+  'yes':
+    en: 'Yes'
     de: Ja
-  "no":
-    en: "No"
+  'no':
+    en: 'No'
     de: Nein
   rich_summary:
     en: Rich notification
@@ -142,15 +142,15 @@ notify:
     en: Type a reply…
     de: Antwort eingeben…
   waiting:
-    en: "notification %{id}: waiting for a click"
-    de: "Benachrichtigung %{id}: wartet auf einen Klick"
+    en: 'notification %{id}: waiting for a click'
+    de: 'Benachrichtigung %{id}: wartet auf einen Klick'
   picked:
-    en: "notification %{id}: picked %{key}"
-    de: "Benachrichtigung %{id}: %{key} gewählt"
+    en: 'notification %{id}: picked %{key}'
+    de: 'Benachrichtigung %{id}: %{key} gewählt'
 error:
   unknown:
-    en: "unknown method %{method}"
-    de: "unbekannte Methode %{method}"
+    en: 'unknown method %{method}'
+    de: 'unbekannte Methode %{method}'
   running:
     en: the sh loop is still running
     de: die sh-Schleife läuft noch

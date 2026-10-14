@@ -1,8 +1,8 @@
-import { View } from "gpui-kit";
-import { v_flex } from "gpui-base";
-import { Button } from "gpui-component";
-import { get } from "corona/settings";
-import { closePanel } from "corona/surface";
+import { View } from 'gpui-kit';
+import { v_flex } from 'gpui-base';
+import { Button } from 'gpui-component';
+import { get } from 'corona/settings';
+import { closePanel } from 'corona/surface';
 
 /** @import { AsyncContext, Context, Element } from "gpui-kit" */
 /** @import { Props } from "gpui-shell" */
@@ -18,8 +18,12 @@ export default class Panel extends View {
       .size_full()
       .gap_2()
       .p_4()
-      .child(get("label"))
-      .child("Opened from the bar widget; Click it again to close.")
-      .child(new Button("test-close").label("Close").on_click(() => closePanel("main")));
+      .child(get('label'))
+      .child('Opened from the bar widget; Click it again to close.')
+      .child(
+        new Button('test-close')
+          .label('Close')
+          .on_click(() => closePanel('main'))
+      );
   }
 }

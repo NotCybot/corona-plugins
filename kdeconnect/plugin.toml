@@ -32,4 +32,10 @@ dbus = { session = ["org.kde.kdeconnect"] }
 # casting: adb for wireless debugging, scrcpy for the mirror window
 fs = { execute = ["adb", "scrcpy"] }
 # adb keeps its keys in HOME; scrcpy opens a window on the session's display
-process = { env = ["PATH", "HOME", "XDG_RUNTIME_DIR", "WAYLAND_DISPLAY", "DISPLAY"] }
+process = { env = [
+  "PATH",
+  "HOME",
+  "XDG_RUNTIME_DIR",
+  "WAYLAND_DISPLAY",
+  "DISPLAY"
+] }

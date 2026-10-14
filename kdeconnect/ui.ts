@@ -1,12 +1,12 @@
-import { div } from "gpui-kit";
-import type { Color } from "gpui-kit";
+import { div } from 'gpui-kit';
+import type { Color } from 'gpui-kit';
 
-export const ONLINE: Color = "#3fbf6f";
+export const ONLINE: Color = '#3fbf6f';
 
 export const DEVICE_ICON: Record<string, string> = {
-  phone: "icons/smartphone.svg",
-  smartphone: "icons/smartphone.svg",
-  tablet: "icons/tablet.svg",
+  phone: 'icons/smartphone.svg',
+  smartphone: 'icons/smartphone.svg',
+  tablet: 'icons/tablet.svg'
 };
 
 export function dot(color: Color) {
@@ -17,5 +17,5 @@ export function dot(color: Color) {
 export function tint(color: Color, alpha: number): Color {
   return `${color.slice(0, 7)}${Math.round(alpha * 255)
     .toString(16)
-    .padStart(2, "0")}` as Color;
+    .padStart(2, '0')}` as Color;
 }
