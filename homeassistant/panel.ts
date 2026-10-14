@@ -98,13 +98,13 @@ const KELVIN_STEP = 50;
 const BROWSE_LIMIT = 100;
 
 /** A light's sliders while its row is open, and whether they moved since */
-interface Draft {
+type Draft = {
   id: string;
   bri: SliderState | null;
   ct: SliderState | null;
   hue: SliderState | null;
   dirty: boolean;
-}
+};
 
 /** The pinned entities from the service, their controls, and Manage entities. */
 export default class Panel extends View {
