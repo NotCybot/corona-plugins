@@ -98,13 +98,13 @@ const KELVIN_STEP = 50;
 const BROWSE_LIMIT = 100;
 
 /** A light's sliders while its row is open, and whether they moved since */
-type Draft = {
+interface Draft {
   id: string;
   bri: SliderState | null;
   ct: SliderState | null;
   hue: SliderState | null;
   dirty: boolean;
-};
+}
 
 /** The pinned entities from the service, their controls, and Manage entities. */
 export default class Panel extends View {
@@ -127,9 +127,9 @@ export default class Panel extends View {
   render(cx: Context): Element {
     const theme = cx.theme();
     const snap = (getState('ha') as Snapshot | null) ?? {
-      status: 'connecting',
+      entities: {},
       error: null,
-      entities: {}
+      status: 'connecting'
     };
     const root = v_flex()
       .size_full()
@@ -227,12 +227,12 @@ export default class Panel extends View {
           )
         : null;
     }).filter((s): s is Element => s !== null);
-    // pinned ids of a domain no section takes still show, under Other
-    const known = SECTIONS.flatMap(([, domains]) => domains);
+    // Pinned ids of a domain no section takes still show, under Other
+    const known = new Set(SECTIONS.flatMap(([, domains]) => domains));
     const other = pinned
-      .filter((id) => !known.includes(domain(id)))
+      .filter((id) => !known.has(domain(id)))
       .map((id) => this.row(snap.entities[id], theme));
-    if (other.length)
+    if (other.length) {
       sections.push(
         section(
           theme,
@@ -241,6 +241,7 @@ export default class Panel extends View {
           div().font_normal().child(String(other.length))
         )
       );
+    }
     return v_flex()
       .id('ha-list')
       .flex_1()
@@ -338,7 +339,9 @@ export default class Panel extends View {
           .child(value(e))
       );
     }
-    if (!open || !this.draft) return main;
+    if (!open || !this.draft) {
+      return main;
+    }
 
     const d = this.draft;
     const sliders: Element[] = [];
@@ -358,7 +361,7 @@ export default class Panel extends View {
             .text_color(theme.foreground)
             .child(text)
         );
-    if (d.bri)
+    if (d.bri) {
       sliders.push(
         sliderRow(
           'Brightness',
@@ -366,12 +369,15 @@ export default class Panel extends View {
           `${Math.round((single(d.bri.value()) / 255) * 100)}%`
         )
       );
-    if (d.ct)
+    }
+    if (d.ct) {
       sliders.push(
         sliderRow('Color temp', d.ct, `${single(d.ct.value()) * KELVIN_STEP}K`)
       );
-    if (d.hue)
+    }
+    if (d.hue) {
       sliders.push(sliderRow('Hue', d.hue, `${single(d.hue.value())}°`));
+    }
     return v_flex()
       .gap_2p5()
       .child(main)
@@ -495,7 +501,9 @@ export default class Panel extends View {
 
   /** Opens Manage entities with every entity, fetched once per opening */
   browse(cx: Context): void {
-    if (this.busy.has('browse')) return;
+    if (this.busy.has('browse')) {
+      return;
+    }
     this.busy.add('browse');
     cx.notify();
     cx.spawn(async (cx) => {
@@ -512,22 +520,24 @@ export default class Panel extends View {
   /** Opens a light's sliders at its current values, or closes them */
   expand(e: Entity, cx: Context): void {
     if (this.draft?.id === e.id) {
-      for (const state of [this.draft.bri, this.draft.ct, this.draft.hue])
+      for (const state of [this.draft.bri, this.draft.ct, this.draft.hue]) {
         state?.release();
+      }
       this.draft = null;
       cx.notify();
       return;
     }
-    for (const state of [this.draft?.bri, this.draft?.ct, this.draft?.hue])
+    for (const state of [this.draft?.bri, this.draft?.ct, this.draft?.hue]) {
       state?.release();
+    }
     const caps = lightCaps(e);
     const a = e.attributes;
     const draft: Draft = {
-      id: e.id,
       bri: null,
       ct: null,
+      dirty: false,
       hue: null,
-      dirty: false
+      id: e.id
     };
     const touched = (_value: SliderValue, cx: Context) => {
       draft.dirty = true;
@@ -541,12 +551,13 @@ export default class Panel extends View {
       state.on('change', touched);
       return state;
     };
-    if (caps.bri)
+    if (caps.bri) {
       draft.bri = make({
         min: 1,
         max: 255,
         value: Number(a.brightness ?? 255)
       });
+    }
     if (caps.ct) {
       const min = Math.ceil(
         Number(a.min_color_temp_kelvin ?? 2000) / KELVIN_STEP
@@ -555,17 +566,18 @@ export default class Panel extends View {
         Number(a.max_color_temp_kelvin ?? 6500) / KELVIN_STEP
       );
       draft.ct = make({
-        min,
         max,
+        min,
         value: Math.round(Number(a.color_temp_kelvin ?? 3000) / KELVIN_STEP)
       });
     }
-    if (caps.hue)
+    if (caps.hue) {
       draft.hue = make({
         min: 0,
         max: 360,
         value: Math.round(Number((a.hs_color as number[] | null)?.[0] ?? 0))
       });
+    }
     this.draft = draft;
     cx.notify();
   }
@@ -573,11 +585,17 @@ export default class Panel extends View {
   /** Turns the light on at the sliders' values */
   apply(e: Entity, cx: Context): void {
     const d = this.draft;
-    if (!d) return;
-    const data: { [key: string]: JsonValue } = {};
-    if (d.bri) data.brightness = single(d.bri.value());
-    // color temperature and hue are two color modes; the one last moved wins only if both were touched, so hue goes last
-    if (d.ct) data.color_temp_kelvin = single(d.ct.value()) * KELVIN_STEP;
+    if (!d) {
+      return;
+    }
+    const data: Record<string, JsonValue> = {};
+    if (d.bri) {
+      data.brightness = single(d.bri.value());
+    }
+    // Color temperature and hue are two color modes; the one last moved wins only if both were touched, so hue goes last
+    if (d.ct) {
+      data.color_temp_kelvin = single(d.ct.value()) * KELVIN_STEP;
+    }
     if (
       d.hue &&
       Number((e.attributes.hs_color as number[] | null)?.[0] ?? -1) !==
@@ -611,12 +629,14 @@ export default class Panel extends View {
     data: JsonValue,
     cx: Context
   ): void {
-    this.run('call', { domain, service, entity, data }, cx, entity);
+    this.run('call', { data, domain, entity, service }, cx, entity);
   }
 
   /** Calls the service; errors come back through state `msg` */
   run(method: string, args: JsonValue, cx: Context, key = method): void {
-    if (this.busy.has(key)) return;
+    if (this.busy.has(key)) {
+      return;
+    }
     this.busy.add(key);
     cx.notify();
     cx.spawn(async (cx) => {
