@@ -2,9 +2,9 @@
  * What corona's host functions resolve to on failure: they answer `{ message }`
  * instead of throwing. Standard modules (`process`, `net`, `fetch`, `fs`) throw.
  */
-export interface Failure {
+export type Failure = {
   message: string;
-}
+};
 
 export function failed(value: unknown): value is Failure {
   return (

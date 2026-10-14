@@ -55,10 +55,10 @@ const QUALITY = [
 /** Seek runs in thousandths of the track, since a slider's range is fixed when it is made */
 const SEEK_STEPS = 1000;
 
-interface Favorite {
+type Favorite = {
   number: string;
   name: string;
-}
+};
 
 /** KDE Connect's devices from the service, and their actions as service calls. */
 export default class Panel extends View {

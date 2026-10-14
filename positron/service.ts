@@ -1,7 +1,7 @@
 import { fail, nextCall, reply } from 'corona/plugin';
 import type { Call, JsonValue } from 'corona/plugin';
 import { notify } from 'corona/notifications';
-import process from 'node:process';
+import process from 'process';
 
 /** What `call(method)` in a view and `corona ipc plugin positron <method>` reach */
 const methods: Record<string, () => Promise<JsonValue>> = {

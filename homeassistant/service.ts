@@ -12,35 +12,35 @@ export type Status =
   | 'unreachable'
   | 'auth-failed'
   | 'connected';
-export interface Entity {
+export type Entity = {
   id: string;
   state: string;
   attributes: Record<string, JsonValue>;
-}
+};
 /** What the views read from state `ha` */
-export interface Snapshot {
+export type Snapshot = {
   status: Status;
   error: string | null;
   /** The monitored entities by id, as far as Home Assistant reported them */
   entities: Record<string, Entity>;
-}
+};
 /** An entity in the Manage entities list */
-export interface Listed {
+export type Listed = {
   id: string;
   name: string;
-}
+};
 
 type Args = Record<string, JsonValue>;
-interface Message {
+type Message = {
   id?: number;
   type: string;
   [key: string]: JsonValue | undefined;
-}
+};
 /** Subscribe_entities' compressed state: `s` state, `a` attributes */
-interface Compressed {
+type Compressed = {
   s?: string;
   a?: Record<string, JsonValue>;
-}
+};
 
 let snapshot: Snapshot = { entities: {}, error: null, status: 'connecting' };
 let session: Session | null = null;

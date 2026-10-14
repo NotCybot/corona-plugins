@@ -10,23 +10,23 @@ import {
 } from 'corona/dbus';
 import type { Rule } from 'corona/dbus';
 import * as secrets from 'corona/secrets';
-import { readFile } from 'node:fs/promises';
+import { readFile } from 'fs/promises';
 import {
   listenRedirect,
   nextRedirect,
   openUri,
   pickFiles
 } from 'corona/desktop';
-import { open } from 'node:fs/promises';
+import { open } from 'fs/promises';
 import { nextSleepEvent } from 'corona/power';
 import { closePanel, openPanel } from 'corona/surface';
 import { get, set, setOptions } from 'corona/settings';
 import { t } from 'corona/i18n';
-import process from 'node:process';
-import type { ChildProcess } from 'node:process';
-import { connect } from 'node:net';
-import type { Socket } from 'node:net';
-import { Buffer } from 'node:buffer';
+import process from 'process';
+import type { ChildProcess } from 'process';
+import { connect } from 'net';
+import type { Socket } from 'net';
+import { Buffer } from 'buffer';
 import type { AsyncContext } from 'gpui-kit';
 import { message, ok } from './util.ts';
 
@@ -246,11 +246,11 @@ async function dbus(): Promise<JsonValue> {
   return { devices, kdeconnect };
 }
 
-interface TailscaleStatus {
+type TailscaleStatus = {
   BackendState?: string;
   Self?: { HostName?: string; TailscaleIPs?: string[] };
   Peer?: Record<string, unknown>;
-}
+};
 
 /** LocalAPI over the daemon's unix socket; HTTP/1.0 so the body ends at EOF, unchunked */
 async function tailscale(): Promise<JsonValue> {

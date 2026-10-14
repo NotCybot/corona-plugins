@@ -31,6 +31,8 @@
     "one-var": "off",
     "typescript/no-extraneous-class": "off",
     "eslint/max-params": "off",
+    "typescript/consistent-type-definitions": ["warn", "type"],
+    "unicorn/prefer-node-protocol": "off",
     "sort-imports": [
       "warn",
       {

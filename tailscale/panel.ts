@@ -64,14 +64,14 @@ const OS_ICON: Record<string, string> = {
 /** A key expiring within this is warned about */
 const EXPIRY_WARNING_MS = 7 * 24 * 3600 * 1000;
 
-interface Row {
+type Row = {
   icon?: string;
   title: string | Element;
   desc?: string;
   actions?: Element[];
   footer?: Element;
   variant?: 'muted' | 'outline';
-}
+};
 
 /** Tailscale's state from the service, and its actions as service calls. */
 export default class Panel extends View {

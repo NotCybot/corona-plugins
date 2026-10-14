@@ -3,9 +3,9 @@ import type { Call, JsonValue } from 'corona/plugin';
 import { openUri, pickFiles } from 'corona/desktop';
 import { closePanel, openPanel } from 'corona/surface';
 import { get, set } from 'corona/settings';
-import process from 'node:process';
-import { basename } from 'node:path';
-import { Buffer } from 'node:buffer';
+import process from 'process';
+import { basename } from 'path';
+import { Buffer } from 'buffer';
 import type { AsyncContext } from 'gpui-kit';
 
 const SOCKET = '/run/tailscale/tailscaled.sock';
@@ -26,7 +26,7 @@ export type Conn =
   | 'needs-login'
   | 'starting'
   | 'unavailable';
-export interface Peer {
+export type Peer = {
   id: string;
   name: string;
   ip: string;
@@ -34,10 +34,10 @@ export interface Peer {
   online: boolean;
   lastSeen: string | null;
   exitOption: boolean;
-}
+};
 export type PrefKey = 'shields' | 'routes' | 'ssh' | 'advertise' | 'lan';
 /** What the views read from state `ts` */
-export interface Snapshot {
+export type Snapshot = {
   conn: Conn;
   error: string | null;
   self: { name: string; ip: string } | null;
@@ -50,14 +50,14 @@ export interface Snapshot {
   admin: string | null;
   /** Taildrop files waiting to be received */
   waiting: number;
-}
+};
 /** State `recent`, newest first */
-export interface Recent {
+export type Recent = {
   file: string;
   meta: string;
-}
+};
 
-interface Node {
+type Node = {
   ID: string;
   HostName: string;
   DNSName: string;
@@ -67,13 +67,13 @@ interface Node {
   LastSeen?: string;
   ExitNodeOption?: boolean;
   KeyExpiry?: string;
-}
-interface Status {
+};
+type Status = {
   BackendState: string;
   Self?: Node;
   Peer?: Record<string, Node>;
-}
-interface Prefs {
+};
+type Prefs = {
   ControlURL: string;
   WantRunning: boolean;
   ExitNodeID: string;
@@ -82,7 +82,7 @@ interface Prefs {
   RunSSH: boolean;
   ExitNodeAllowLANAccess: boolean;
   AdvertiseRoutes: string[] | null;
-}
+};
 
 /** Each view-side preference and the `ipn.Prefs` field behind it, except `advertise` */
 const PREF_FIELDS: Record<Exclude<PrefKey, 'advertise'>, string> = {

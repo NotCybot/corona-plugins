@@ -12,14 +12,14 @@ import type { Rule } from 'corona/dbus';
 import { pickFiles } from 'corona/desktop';
 import { closePanel, openPanel } from 'corona/surface';
 import { get, set } from 'corona/settings';
-import process from 'node:process';
-import type { ChildProcess } from 'node:process';
+import process from 'process';
+import type { ChildProcess } from 'process';
 
 const KC = 'org.kde.kdeconnect';
 const ROOT = '/modules/kdeconnect';
 const IFACE = 'org.kde.kdeconnect.device';
 
-export interface Media {
+export type Media = {
   title: string;
   artist: string;
   playing: boolean;
@@ -29,8 +29,8 @@ export interface Media {
   position: number;
   /** `Date.now()` when `position` was read, to move it on while playing */
   at: number;
-}
-export interface Device {
+};
+export type Device = {
   id: string;
   name: string;
   type: string;
@@ -46,24 +46,24 @@ export interface Device {
   /** Media volume, 0–100; null without the mprisremote plugin */
   volume: number | null;
   media: Media | null;
-}
+};
 /** What the views read from state `kc` */
-export interface Snapshot {
+export type Snapshot = {
   running: boolean;
   devices: Device[];
-}
+};
 /** State `cast`: the adb serial and whether scrcpy runs, by device id */
-export interface Cast {
+export type Cast = {
   serial: string | null;
   casting: boolean;
-}
-export interface CastOptions {
+};
+export type CastOptions = {
   res: number;
   br: number;
   fps: number;
   record: boolean;
   screenOff: boolean;
-}
+};
 
 type Args = Record<string, JsonValue>;
 

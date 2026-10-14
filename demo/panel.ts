@@ -3,7 +3,7 @@ import type { AsyncContext, Context, Element } from 'gpui-kit';
 import type { Props } from 'gpui-shell';
 import { h_flex, v_flex } from 'gpui-base';
 import { Button } from 'gpui-component';
-import { readFile } from 'node:fs/promises';
+import { readFile } from 'fs/promises';
 import { call, getState } from 'corona/plugin';
 import { language, t } from 'corona/i18n';
 import { all } from 'corona/settings';
@@ -31,12 +31,12 @@ const METHODS = [
   'oauth'
 ];
 
-interface Spawned {
+type Spawned = {
   pid: number;
   lines: string[];
   exit: number | string | null;
   stderr: string | null;
-}
+};
 
 /** A dashboard of every API: service calls, shared state, desktop, images, clipboard. */
 export default class Panel extends View {
