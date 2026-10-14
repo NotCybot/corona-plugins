@@ -18,8 +18,12 @@ jobs:
           private-key: ${{ secrets.COMMIT_BOT_PRIVATE_KEY }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install oxfmt
-        run: npm install -g oxfmt
+      - uses: bahmutov/npm-install@v1
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+      # gpui-kit.d.ts is gitignored, tsc needs each plugin's own
+      - name: Generate plugin types
+        run: nix run github:Profiidev/corona/latest --accept-flake-config -- types $(dirname */plugin.toml)
 
       - name: Run linters
         uses: profiidev/rust-lint-action@7185d73733d1ab71a15c74934a2349622ad60740 # v4
@@ -30,6 +34,9 @@ jobs:
           oxfmt: true
           oxlint: true
           tsc: true
+          # each plugin is its own project (per-plugin corona/settings types), the action runs tsc only once
+          tsc_command_prefix: >-
+            sh -c 'r=0; for p in */tsconfig.json; do npx --no-install "$@" -p "$p" || r=1; done; exit $r' sh
           git_sign_commits: true
           github_token: ${{ steps.app-token.outputs.token || github.token }}
 

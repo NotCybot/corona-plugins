@@ -7,7 +7,7 @@
     "fmt:check": "oxfmt --check .",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "tsc": "r=0; for d in */jsconfig.json; do tsc --noEmit -p \"$d\" || r=1; done; exit $r"
+    "tsc": "tsc -b */tsconfig.json"
   },
   "devDependencies": {
     "oxfmt": "^0.73.0",
