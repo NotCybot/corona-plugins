@@ -553,8 +553,8 @@ export default class Panel extends View {
     };
     if (caps.bri) {
       draft.bri = make({
-        min: 1,
         max: 255,
+        min: 1,
         value: Number(a.brightness ?? 255)
       });
     }
@@ -573,8 +573,8 @@ export default class Panel extends View {
     }
     if (caps.hue) {
       draft.hue = make({
-        min: 0,
         max: 360,
+        min: 0,
         value: Math.round(Number((a.hs_color as number[] | null)?.[0] ?? 0))
       });
     }
