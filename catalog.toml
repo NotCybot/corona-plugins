@@ -1,12 +1,6 @@
 #:schema /run/current-system/sw/share/corona/schema/catalog.schema.json
 
 [[plugin]]
-id = "test"
-name = "Dashboard"
-version = "0.1.1"
-description = "A test plugin"
-
-[[plugin]]
 id = "demo"
 name = "Demo"
 version = "0.2.0"
