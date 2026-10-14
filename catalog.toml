@@ -38,3 +38,11 @@ version = "0.1.0"
 description = "Home Assistant: pinned lights, switches, sensors and automations, live over the WebSocket API"
 readme = "README.md"
 tags = ["home", "smart-home"]
+
+[[plugin]]
+id = "positron"
+name = "Notes"
+version = "0.1.0"
+description = "Opens and closes the notes window of positron from the bar"
+readme = "README.md"
+tags = ["notes", "positron"]

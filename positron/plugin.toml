@@ -1,0 +1,20 @@
+#:schema /run/current-system/sw/share/corona/schema/plugin.schema.json
+id = "positron"
+name = "Notes"
+version = "0.1.0"
+description = "Opens and closes the notes window of positron from the bar"
+
+# runs `positron ipc <action>`; answers `call` and `corona ipc plugin positron <method>`
+service = "service.ts"
+
+# a bar button; shown as `positron:notes` in a bar
+[widgets.notes]
+view = "widget.ts"
+name = "Notes"
+
+[capabilities]
+corona = ["notifications"]
+# positron's own CLI talks to the running app over its socket
+fs = { execute = ["positron"] }
+# the CLI finds the socket in $XDG_RUNTIME_DIR/positron-$WAYLAND_DISPLAY.sock
+process = { env = ["PATH", "XDG_RUNTIME_DIR", "WAYLAND_DISPLAY"] }
