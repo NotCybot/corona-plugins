@@ -99,9 +99,7 @@ const CONN: Record<string, Conn> = {
   Stopped: 'stopped'
 };
 
-interface Args {
-  [key: string]: JsonValue;
-}
+type Args = Record<string, JsonValue>;
 /** Each answers with the line the panel shows */
 const methods: Record<string, (args: Args) => Promise<string | null>> = {
   login,
@@ -191,7 +189,9 @@ async function watch(cx: AsyncContext): Promise<void> {
           );
           rest = lines.pop() ?? '';
           for (const line of lines) {
-            if (line.trim()) notified(JSON.parse(line));
+            if (line.trim()) {
+              notified(JSON.parse(line));
+            }
           }
         }
       } finally {
@@ -290,7 +290,7 @@ function snapshot(status: Status, prefs: Prefs, waiting: number): Snapshot {
       ssh: prefs.RunSSH
     },
     self: self
-      ? { name: nodeName(self), ip: self.TailscaleIPs?.[0] ?? '' }
+      ? { ip: self.TailscaleIPs?.[0] ?? '', name: nodeName(self) }
       : null,
     waiting
   };
@@ -311,11 +311,11 @@ function unavailable(error: unknown): void {
     keyExpiry: null,
     peers: [],
     prefs: last?.prefs ?? {
-      shields: false,
-      routes: false,
-      ssh: false,
       advertise: false,
-      lan: false
+      lan: false,
+      routes: false,
+      shields: false,
+      ssh: false
     },
     self: null,
     waiting: 0

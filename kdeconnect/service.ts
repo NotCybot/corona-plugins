@@ -65,9 +65,7 @@ export interface CastOptions {
   screenOff: boolean;
 }
 
-interface Args {
-  [key: string]: JsonValue;
-}
+type Args = Record<string, JsonValue>;
 
 /** Each answers with the line the panel shows */
 const methods: Record<string, (args: Args) => Promise<string | null>> = {
@@ -81,11 +79,12 @@ const methods: Record<string, (args: Args) => Promise<string | null>> = {
   adbStatus,
   browse: async ({ id }) => {
     const ok = await plugin(id, 'sftp', 'startBrowsing');
-    if (ok === false)
+    if (ok === false) {
       throw new Error(
         String(await plugin(id, 'sftp', 'getMountError')) ||
           'could not mount the phone'
       );
+    }
     return "Opening the phone's files…";
   },
   cancelPairing: async ({ id }) => {
@@ -281,21 +280,21 @@ async function read(id: string): Promise<Device | null> {
     media:
       media && media.player
         ? {
-            title: String(media.title),
             artist: String(media.artist),
-            playing: media.isPlaying === true,
+            at: Date.now(),
             canSeek: media.canSeek === true,
             length: Number(media.length),
+            playing: media.isPlaying === true,
             position: Number(media.position),
-            at: Date.now()
+            title: String(media.title)
           }
         : null,
     name: String(props.name),
     network:
       network && network.cellularNetworkType
         ? {
-            type: String(network.cellularNetworkType),
-            strength: Number(network.cellularNetworkStrength)
+            strength: Number(network.cellularNetworkStrength),
+            type: String(network.cellularNetworkType)
           }
         : null,
     pairRequested: props.isPairRequested === true,

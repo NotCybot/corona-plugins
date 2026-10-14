@@ -15,14 +15,14 @@ export type Status =
 export interface Entity {
   id: string;
   state: string;
-  attributes: { [key: string]: JsonValue };
+  attributes: Record<string, JsonValue>;
 }
 /** What the views read from state `ha` */
 export interface Snapshot {
   status: Status;
   error: string | null;
   /** The monitored entities by id, as far as Home Assistant reported them */
-  entities: { [id: string]: Entity };
+  entities: Record<string, Entity>;
 }
 /** An entity in the Manage entities list */
 export interface Listed {
@@ -30,9 +30,7 @@ export interface Listed {
   name: string;
 }
 
-interface Args {
-  [key: string]: JsonValue;
-}
+type Args = Record<string, JsonValue>;
 interface Message {
   id?: number;
   type: string;
@@ -41,7 +39,7 @@ interface Message {
 /** Subscribe_entities' compressed state: `s` state, `a` attributes */
 interface Compressed {
   s?: string;
-  a?: { [key: string]: JsonValue };
+  a?: Record<string, JsonValue>;
 }
 
 let snapshot: Snapshot = { entities: {}, error: null, status: 'connecting' };
@@ -73,18 +71,20 @@ const methods: Record<string, (args: Args) => Promise<JsonValue>> = {
   },
   call: async ({ domain, service, entity, data }) => {
     await live().request({
-      type: 'call_service',
       domain,
       service,
+      service_data: data ?? {},
       target: { entity_id: entity },
-      service_data: data ?? {}
+      type: 'call_service'
     });
     return null;
   },
   pin: async ({ id, on }) => {
     const pinned = get('entities').filter((x) => x !== id);
     const error = set('entities', on ? [...pinned, String(id)] : pinned);
-    if (error) throw new Error(error.message);
+    if (error) {
+      throw new Error(error.message);
+    }
     return null;
   }
 };
@@ -184,7 +184,7 @@ async function connect(cx: AsyncContext): Promise<void> {
     session = null;
     if (retry) {
       if (snapshot.status === 'connected') {
-        publish({ status: 'unreachable', error: 'the connection closed' });
+        publish({ error: 'the connection closed', status: 'unreachable' });
       }
       await Promise.race([changed, cx.sleep(delay)]);
       delay = Math.min(delay * 2, 120_000);

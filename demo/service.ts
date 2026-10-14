@@ -450,13 +450,13 @@ async function unixFetch(): Promise<JsonValue> {
   const response = await fetch(
     'http://local-tailscaled.sock/localapi/v0/status?peers=false',
     {
-      timeout: 5_000,
+      timeout: 5000,
       unix: TAILSCALE
     }
   );
   const text = await response.text();
   if (!response.ok) {
-    return { status: response.status, body: text.slice(0, 300) };
+    return { body: text.slice(0, 300), status: response.status };
   }
   const status = JSON.parse(text) as TailscaleStatus;
   return {
@@ -472,7 +472,7 @@ async function ipnBus(): Promise<JsonValue> {
     'http://local-tailscaled.sock/localapi/v0/watch-ipn-bus?mask=2',
     {
       stream: true,
-      timeout: 5_000,
+      timeout: 5000,
       unix: TAILSCALE
     }
   );
@@ -490,7 +490,7 @@ async function ipnBus(): Promise<JsonValue> {
   }
   const line = Buffer.from(bytes).toString('utf8').split('\n')[0];
   if (stream.status !== 200) {
-    return { status: stream.status, body: line.slice(0, 300) };
+    return { body: line.slice(0, 300), status: stream.status };
   }
   const notify = JSON.parse(line) as { State?: number };
   return { state: notify.State ?? null, status: stream.status };

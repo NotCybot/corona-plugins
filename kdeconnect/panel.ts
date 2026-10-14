@@ -148,7 +148,7 @@ export default class Panel extends View {
       await call('refresh');
       const device = this.device();
       if (device?.address) {
-        await call('adbStatus', { id: device.id, address: device.address });
+        await call('adbStatus', { address: device.address, id: device.id });
       }
       cx.notify();
     });
@@ -389,7 +389,7 @@ export default class Panel extends View {
     cx.notify();
     const device = this.device();
     if (device?.address) {
-      this.run('adbStatus', { id: device.id, address: device.address }, cx);
+      this.run('adbStatus', { address: device.address, id: device.id }, cx);
     }
   }
 

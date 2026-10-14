@@ -49,46 +49,46 @@ const TOGGLES = new Set([
 ]);
 /** One-shot entities: the button's label, icon and the service it calls in their domain */
 const RUNS: Record<string, [string, string, string]> = {
-  script: ['Run', 'play', 'turn_on'],
   automation: ['Trigger', 'play', 'trigger'],
   button: ['Press', 'mouse-pointer-click', 'press'],
-  input_button: ['Press', 'mouse-pointer-click', 'press']
+  input_button: ['Press', 'mouse-pointer-click', 'press'],
+  script: ['Run', 'play', 'turn_on']
 };
 
 const ICONS: Record<string, string> = {
-  light: 'lightbulb',
-  switch: 'power',
-  input_boolean: 'power',
-  fan: 'fan',
-  lock: 'lock',
-  cover: 'door-open',
-  binary_sensor: 'activity',
   automation: 'bot',
+  binary_sensor: 'activity',
   button: 'circle-dot',
-  input_button: 'circle-dot',
-  script: 'play',
   climate: 'thermometer',
+  cover: 'door-open',
+  fan: 'fan',
+  input_boolean: 'power',
+  input_button: 'circle-dot',
+  light: 'lightbulb',
+  lock: 'lock',
   media_player: 'tv',
+  script: 'play',
+  switch: 'power',
   weather: 'cloud'
 };
 
 /** What a binary sensor's on and off mean, by device class */
 const BINARY: Record<string, [string, string]> = {
+  connectivity: ['Connected', 'Disconnected'],
   door: ['Open', 'Closed'],
-  window: ['Open', 'Closed'],
-  opening: ['Open', 'Closed'],
   garage_door: ['Open', 'Closed'],
+  lock: ['Unlocked', 'Locked'],
+  moisture: ['Wet', 'Dry'],
   motion: ['Detected', 'Clear'],
   occupancy: ['Detected', 'Clear'],
-  presence: ['Home', 'Away'],
-  moisture: ['Wet', 'Dry'],
-  smoke: ['Detected', 'Clear'],
-  lock: ['Unlocked', 'Locked'],
+  opening: ['Open', 'Closed'],
   plug: ['Plugged in', 'Unplugged'],
-  connectivity: ['Connected', 'Disconnected']
+  presence: ['Home', 'Away'],
+  smoke: ['Detected', 'Clear'],
+  window: ['Open', 'Closed']
 };
 
-const COLOR_MODES = ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'];
+const COLOR_MODES = new Set(['hs', 'xy', 'rgb', 'rgbw', 'rgbww']);
 /**
  * Color temperature runs in 50 K steps: corona applies a slider's `min`
  * against the default `max` of 100 first, and a `min` above it panics.
@@ -642,7 +642,7 @@ function lightCaps(e: Entity): { bri: boolean; ct: boolean; hue: boolean } {
   return {
     bri: modes.some((m) => m !== 'onoff'),
     ct: modes.includes('color_temp'),
-    hue: modes.some((m) => COLOR_MODES.includes(m))
+    hue: modes.some((m) => COLOR_MODES.has(m))
   };
 }
 
@@ -650,20 +650,32 @@ function icon(e: Entity): string {
   const kind = domain(e.id);
   if (kind === 'sensor') {
     const cls = String(e.attributes.device_class ?? '');
-    if (cls === 'humidity') return 'droplet';
-    if (['power', 'energy', 'current', 'voltage'].includes(cls)) return 'zap';
-    if (cls === 'temperature') return 'thermometer';
+    if (cls === 'humidity') {
+      return 'droplet';
+    }
+    if (['power', 'energy', 'current', 'voltage'].includes(cls)) {
+      return 'zap';
+    }
+    if (cls === 'temperature') {
+      return 'thermometer';
+    }
     return 'activity';
   }
-  if (kind === 'lock' && e.state !== 'locked') return 'lock-open';
-  if (kind === 'cover' && e.state === 'closed') return 'door-closed';
+  if (kind === 'lock' && e.state !== 'locked') {
+    return 'lock-open';
+  }
+  if (kind === 'cover' && e.state === 'closed') {
+    return 'door-closed';
+  }
   return ICONS[kind] ?? 'house';
 }
 
 /** The line under the name */
 function label(e: Entity): string {
   const kind = domain(e.id);
-  if (e.state === 'unavailable') return 'Unavailable';
+  if (e.state === 'unavailable') {
+    return 'Unavailable';
+  }
   if (kind === 'light') {
     const bri = e.attributes.brightness;
     return isOn(e)
@@ -672,13 +684,16 @@ function label(e: Entity): string {
         : 'On'
       : 'Off';
   }
-  if (kind === 'lock')
+  if (kind === 'lock') {
     return e.state === 'locked'
       ? 'Locked'
       : e.state === 'unlocked'
         ? 'Unlocked'
         : capital(e.state);
-  if (kind === 'cover') return capital(e.state);
+  }
+  if (kind === 'cover') {
+    return capital(e.state);
+  }
   if (kind === 'automation') {
     const last = e.attributes.last_triggered;
     return typeof last === 'string'
@@ -687,18 +702,23 @@ function label(e: Entity): string {
         ? 'Disabled'
         : 'Never run';
   }
-  if (kind === 'script') return e.state === 'on' ? 'Running' : 'Idle';
-  // a button's state is when it was last pressed
+  if (kind === 'script') {
+    return e.state === 'on' ? 'Running' : 'Idle';
+  }
+  // A button's state is when it was last pressed
   if (kind === 'button' || kind === 'input_button') {
     return Number.isNaN(Date.parse(e.state))
       ? 'Never pressed'
       : `Last pressed ${when(e.state)}`;
   }
-  if (kind === 'sensor')
+  if (kind === 'sensor') {
     return capital(
       String(e.attributes.device_class ?? 'sensor').replace(/_/g, ' ')
     );
-  if (kind === 'binary_sensor') return 'Binary sensor';
+  }
+  if (kind === 'binary_sensor') {
+    return 'Binary sensor';
+  }
   if (TOGGLES.has(kind)) {
     return isOn(e) ? 'On' : 'Off';
   }

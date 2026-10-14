@@ -633,7 +633,7 @@ export default class Panel extends View {
             .on_change((on, cx) =>
               this.run(
                 'setPref',
-                { key: pref.key, on, label: pref.label },
+                { key: pref.key, label: pref.label, on },
                 cx,
                 `pref:${pref.key}`
               )
