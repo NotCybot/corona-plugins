@@ -1,19 +1,26 @@
-import { View, div } from 'gpui-kit';
-import type { AsyncContext, Color, Context, Element } from 'gpui-kit';
+import {
+  type AsyncContext,
+  type Color,
+  type Context,
+  type Element,
+  View,
+  div
+} from 'gpui-kit';
 import type { Props } from 'gpui-shell';
-import type { Theme } from 'gpui-base';
 import {
   Slider,
   SliderIndicator,
   SliderState,
   SliderThumb,
   SliderTrack,
+  type SliderValue,
+  type Theme,
   h_flex,
   v_flex
 } from 'gpui-base';
-import type { SliderValue } from 'gpui-base';
 import {
   Button,
+  type ButtonElement,
   Icon,
   InputGroup,
   InputGroupAddon,
@@ -21,13 +28,12 @@ import {
   InputState,
   Switch
 } from 'gpui-component';
-import type { ButtonElement } from 'gpui-component';
-import { call, getState } from 'corona/plugin';
-import type { JsonValue } from 'corona/plugin';
+import { type JsonValue, call } from 'corona/plugin';
 import { get } from 'corona/settings';
 import { closePanel } from 'corona/surface';
 import type { Entity, Listed, Snapshot, Status } from './service.ts';
 import { AMBER, STATUS, dot, tint } from './ui.ts';
+import { isListed, list, snapshot, statusLine } from './state.ts';
 
 const SECTIONS: [string, string[]][] = [
   ['Lights', ['light']],
@@ -39,49 +45,56 @@ const SECTIONS: [string, string[]][] = [
   ['Buttons', ['button', 'input_button']],
   ['Automations', ['automation', 'script']]
 ];
-const TOGGLES = ['light', 'switch', 'input_boolean', 'fan', 'cover', 'lock'];
+const TOGGLES = new Set([
+  'light',
+  'switch',
+  'input_boolean',
+  'fan',
+  'cover',
+  'lock'
+]);
 /** One-shot entities: the button's label, icon and the service it calls in their domain */
 const RUNS: Record<string, [string, string, string]> = {
-  script: ['Run', 'play', 'turn_on'],
   automation: ['Trigger', 'play', 'trigger'],
   button: ['Press', 'mouse-pointer-click', 'press'],
-  input_button: ['Press', 'mouse-pointer-click', 'press']
+  input_button: ['Press', 'mouse-pointer-click', 'press'],
+  script: ['Run', 'play', 'turn_on']
 };
 
 const ICONS: Record<string, string> = {
-  light: 'lightbulb',
-  switch: 'power',
-  input_boolean: 'power',
-  fan: 'fan',
-  lock: 'lock',
-  cover: 'door-open',
-  binary_sensor: 'activity',
   automation: 'bot',
+  binary_sensor: 'activity',
   button: 'circle-dot',
-  input_button: 'circle-dot',
-  script: 'play',
   climate: 'thermometer',
+  cover: 'door-open',
+  fan: 'fan',
+  input_boolean: 'power',
+  input_button: 'circle-dot',
+  light: 'lightbulb',
+  lock: 'lock',
   media_player: 'tv',
+  script: 'play',
+  switch: 'power',
   weather: 'cloud'
 };
 
 /** What a binary sensor's on and off mean, by device class */
 const BINARY: Record<string, [string, string]> = {
+  connectivity: ['Connected', 'Disconnected'],
   door: ['Open', 'Closed'],
-  window: ['Open', 'Closed'],
-  opening: ['Open', 'Closed'],
   garage_door: ['Open', 'Closed'],
+  lock: ['Unlocked', 'Locked'],
+  moisture: ['Wet', 'Dry'],
   motion: ['Detected', 'Clear'],
   occupancy: ['Detected', 'Clear'],
-  presence: ['Home', 'Away'],
-  moisture: ['Wet', 'Dry'],
-  smoke: ['Detected', 'Clear'],
-  lock: ['Unlocked', 'Locked'],
+  opening: ['Open', 'Closed'],
   plug: ['Plugged in', 'Unplugged'],
-  connectivity: ['Connected', 'Disconnected']
+  presence: ['Home', 'Away'],
+  smoke: ['Detected', 'Clear'],
+  window: ['Open', 'Closed']
 };
 
-const COLOR_MODES = ['hs', 'xy', 'rgb', 'rgbw', 'rgbww'];
+const COLOR_MODES = new Set(['hs', 'xy', 'rgb', 'rgbw', 'rgbww']);
 /**
  * Color temperature runs in 50 K steps: corona applies a slider's `min`
  * against the default `max` of 100 first, and a `min` above it panics.
@@ -101,14 +114,14 @@ type Draft = {
 
 /** The pinned entities from the service, their controls, and Manage entities. */
 export default class Panel extends View {
-  declare browsing: boolean;
-  declare all: Listed[] | null;
-  declare query: string;
-  declare search: InputState;
-  declare draft: Draft | null;
-  declare busy: Set<string>;
+  declare private browsing: boolean;
+  declare private all: Listed[] | null;
+  declare private query: string;
+  declare private search: InputState;
+  declare private draft: Draft | null;
+  declare private busy: Set<string>;
 
-  init(_props: Props | undefined, _cx: AsyncContext): void {
+  public init(_props: Props | undefined, _cx: AsyncContext): void {
     this.browsing = false;
     this.all = null;
     this.query = '';
@@ -117,12 +130,12 @@ export default class Panel extends View {
     this.busy = new Set();
   }
 
-  render(cx: Context): Element {
+  public render(cx: Context): Element {
     const theme = cx.theme();
-    const snap = (getState('ha') as Snapshot | null) ?? {
-      status: 'connecting' as Status,
+    const snap = snapshot() ?? {
+      entities: {},
       error: null,
-      entities: {}
+      status: 'connecting'
     };
     const root = v_flex()
       .size_full()
@@ -132,11 +145,11 @@ export default class Panel extends View {
     if (this.browsing) {
       root.children(this.browser(theme));
     } else if (snap.status !== 'connected') {
-      root.child(message(snap, theme));
+      root.child(message(snap.status, snap.error, theme));
     } else {
       root.child(this.list(snap, theme));
     }
-    const status = getState('msg') as string | null;
+    const status = statusLine();
     if (status) {
       root.child(
         div()
@@ -151,7 +164,7 @@ export default class Panel extends View {
     return root;
   }
 
-  header(snap: Snapshot, theme: Theme): Element {
+  private header(snap: Snapshot, theme: Theme): Element {
     const [text, color] = STATUS[snap.status];
     const pinned = get('entities').length;
     const row = h_flex().flex_none().items_center().gap_2p5().px_0p5();
@@ -205,7 +218,7 @@ export default class Panel extends View {
     );
   }
 
-  list(snap: Snapshot, theme: Theme): Element {
+  private list(snap: Snapshot, theme: Theme): Element {
     const pinned = get('entities').filter((id) => snap.entities[id]);
     const sections = SECTIONS.map(([title, domains]) => {
       const rows = pinned
@@ -220,12 +233,12 @@ export default class Panel extends View {
           )
         : null;
     }).filter((s): s is Element => s !== null);
-    // pinned ids of a domain no section takes still show, under Other
-    const known = SECTIONS.flatMap(([, domains]) => domains);
+    // Pinned ids of a domain no section takes still show, under Other
+    const known = new Set(SECTIONS.flatMap(([, domains]) => domains));
     const other = pinned
-      .filter((id) => !known.includes(domain(id)))
+      .filter((id) => !known.has(domain(id)))
       .map((id) => this.row(snap.entities[id], theme));
-    if (other.length)
+    if (other.length) {
       sections.push(
         section(
           theme,
@@ -234,6 +247,7 @@ export default class Panel extends View {
           div().font_normal().child(String(other.length))
         )
       );
+    }
     return v_flex()
       .id('ha-list')
       .flex_1()
@@ -253,7 +267,7 @@ export default class Panel extends View {
       );
   }
 
-  row(e: Entity, theme: Theme): Element {
+  private row(e: Entity, theme: Theme): Element {
     const kind = domain(e.id);
     const name = String(e.attributes.friendly_name ?? e.id);
     // `unknown` is a button never pressed, still pressable
@@ -264,7 +278,7 @@ export default class Panel extends View {
     const iconColor: Color =
       kind === 'light' && on
         ? AMBER
-        : TOGGLES.includes(kind) && on
+        : TOGGLES.has(kind) && on
           ? theme.foreground
           : theme.muted_foreground;
 
@@ -285,7 +299,7 @@ export default class Panel extends View {
               .child(label(e))
           )
       );
-    if (TOGGLES.includes(kind)) {
+    if (TOGGLES.has(kind)) {
       if (caps && (caps.bri || caps.ct || caps.hue)) {
         main.child(
           iconButton(
@@ -331,7 +345,9 @@ export default class Panel extends View {
           .child(value(e))
       );
     }
-    if (!open || !this.draft) return main;
+    if (!open || !this.draft) {
+      return main;
+    }
 
     const d = this.draft;
     const sliders: Element[] = [];
@@ -351,7 +367,7 @@ export default class Panel extends View {
             .text_color(theme.foreground)
             .child(text)
         );
-    if (d.bri)
+    if (d.bri) {
       sliders.push(
         sliderRow(
           'Brightness',
@@ -359,12 +375,15 @@ export default class Panel extends View {
           `${Math.round((single(d.bri.value()) / 255) * 100)}%`
         )
       );
-    if (d.ct)
+    }
+    if (d.ct) {
       sliders.push(
         sliderRow('Color temp', d.ct, `${single(d.ct.value()) * KELVIN_STEP}K`)
       );
-    if (d.hue)
+    }
+    if (d.hue) {
       sliders.push(sliderRow('Hue', d.hue, `${single(d.hue.value())}°`));
+    }
     return v_flex()
       .gap_2p5()
       .child(main)
@@ -396,7 +415,7 @@ export default class Panel extends View {
       );
   }
 
-  browser(theme: Theme): Element[] {
+  private browser(theme: Theme): Element[] {
     const all = this.all ?? [];
     const pinned = new Set(get('entities'));
     const query = this.query.trim().toLowerCase();
@@ -487,15 +506,17 @@ export default class Panel extends View {
   }
 
   /** Opens Manage entities with every entity, fetched once per opening */
-  browse(cx: Context): void {
-    if (this.busy.has('browse')) return;
+  private browse(cx: Context): void {
+    if (this.busy.has('browse')) {
+      return;
+    }
     this.busy.add('browse');
     cx.notify();
     cx.spawn(async (cx) => {
       const answer = await call('browse');
       this.busy.delete('browse');
-      if (Array.isArray(answer)) {
-        this.all = answer as Listed[];
+      if (isListed(answer)) {
+        this.all = answer;
         this.browsing = true;
       }
       cx.notify();
@@ -503,24 +524,26 @@ export default class Panel extends View {
   }
 
   /** Opens a light's sliders at its current values, or closes them */
-  expand(e: Entity, cx: Context): void {
+  private expand(e: Entity, cx: Context): void {
     if (this.draft?.id === e.id) {
-      for (const state of [this.draft.bri, this.draft.ct, this.draft.hue])
+      for (const state of [this.draft.bri, this.draft.ct, this.draft.hue]) {
         state?.release();
+      }
       this.draft = null;
       cx.notify();
       return;
     }
-    for (const state of [this.draft?.bri, this.draft?.ct, this.draft?.hue])
+    for (const state of [this.draft?.bri, this.draft?.ct, this.draft?.hue]) {
       state?.release();
+    }
     const caps = lightCaps(e);
     const a = e.attributes;
     const draft: Draft = {
-      id: e.id,
       bri: null,
       ct: null,
+      dirty: false,
       hue: null,
-      dirty: false
+      id: e.id
     };
     const touched = (_value: SliderValue, cx: Context) => {
       draft.dirty = true;
@@ -534,12 +557,13 @@ export default class Panel extends View {
       state.on('change', touched);
       return state;
     };
-    if (caps.bri)
+    if (caps.bri) {
       draft.bri = make({
-        min: 1,
         max: 255,
+        min: 1,
         value: Number(a.brightness ?? 255)
       });
+    }
     if (caps.ct) {
       const min = Math.ceil(
         Number(a.min_color_temp_kelvin ?? 2000) / KELVIN_STEP
@@ -548,45 +572,51 @@ export default class Panel extends View {
         Number(a.max_color_temp_kelvin ?? 6500) / KELVIN_STEP
       );
       draft.ct = make({
-        min,
         max,
+        min,
         value: Math.round(Number(a.color_temp_kelvin ?? 3000) / KELVIN_STEP)
       });
     }
-    if (caps.hue)
+    if (caps.hue) {
       draft.hue = make({
-        min: 0,
         max: 360,
-        value: Math.round(Number((a.hs_color as number[] | null)?.[0] ?? 0))
+        min: 0,
+        value: Math.round(Number(list(a.hs_color)[0] ?? 0))
       });
+    }
     this.draft = draft;
     cx.notify();
   }
 
   /** Turns the light on at the sliders' values */
-  apply(e: Entity, cx: Context): void {
+  private apply(e: Entity, cx: Context): void {
     const d = this.draft;
-    if (!d) return;
-    const data: { [key: string]: JsonValue } = {};
-    if (d.bri) data.brightness = single(d.bri.value());
-    // color temperature and hue are two color modes; the one last moved wins only if both were touched, so hue goes last
-    if (d.ct) data.color_temp_kelvin = single(d.ct.value()) * KELVIN_STEP;
+    if (!d) {
+      return;
+    }
+    const data: Record<string, JsonValue> = {};
+    if (d.bri) {
+      data.brightness = single(d.bri.value());
+    }
+    // Color temperature and hue are two color modes; the one last moved wins only if both were touched, so hue goes last
+    if (d.ct) {
+      data.color_temp_kelvin = single(d.ct.value()) * KELVIN_STEP;
+    }
     if (
       d.hue &&
-      Number((e.attributes.hs_color as number[] | null)?.[0] ?? -1) !==
-        single(d.hue.value())
+      Number(list(e.attributes.hs_color)[0] ?? -1) !== single(d.hue.value())
     ) {
       delete data.color_temp_kelvin;
       data.hs_color = [
         single(d.hue.value()),
-        Number((e.attributes.hs_color as number[] | null)?.[1] ?? 100)
+        Number(list(e.attributes.hs_color)[1] ?? 100)
       ];
     }
     d.dirty = false;
     this.service(e.id, 'light', 'turn_on', data, cx);
   }
 
-  toggle(e: Entity, on: boolean, cx: Context): void {
+  private toggle(e: Entity, on: boolean, cx: Context): void {
     const kind = domain(e.id);
     const [service, serviceDomain] =
       kind === 'lock'
@@ -597,19 +627,21 @@ export default class Panel extends View {
     this.service(e.id, serviceDomain, service, null, cx);
   }
 
-  service(
+  private service(
     entity: string,
     domain: string,
     service: string,
     data: JsonValue,
     cx: Context
   ): void {
-    this.run('call', { domain, service, entity, data }, cx, entity);
+    this.run('call', { data, domain, entity, service }, cx, entity);
   }
 
   /** Calls the service; errors come back through state `msg` */
-  run(method: string, args: JsonValue, cx: Context, key = method): void {
-    if (this.busy.has(key)) return;
+  public run(method: string, args: JsonValue, cx: Context, key = method): void {
+    if (this.busy.has(key)) {
+      return;
+    }
     this.busy.add(key);
     cx.notify();
     cx.spawn(async (cx) => {
@@ -631,11 +663,11 @@ function isOn(e: Entity): boolean {
 }
 
 function lightCaps(e: Entity): { bri: boolean; ct: boolean; hue: boolean } {
-  const modes = (e.attributes.supported_color_modes as string[] | null) ?? [];
+  const modes = list(e.attributes.supported_color_modes);
   return {
     bri: modes.some((m) => m !== 'onoff'),
     ct: modes.includes('color_temp'),
-    hue: modes.some((m) => COLOR_MODES.includes(m))
+    hue: modes.some((m) => typeof m === 'string' && COLOR_MODES.has(m))
   };
 }
 
@@ -643,20 +675,32 @@ function icon(e: Entity): string {
   const kind = domain(e.id);
   if (kind === 'sensor') {
     const cls = String(e.attributes.device_class ?? '');
-    if (cls === 'humidity') return 'droplet';
-    if (['power', 'energy', 'current', 'voltage'].includes(cls)) return 'zap';
-    if (cls === 'temperature') return 'thermometer';
+    if (cls === 'humidity') {
+      return 'droplet';
+    }
+    if (['power', 'energy', 'current', 'voltage'].includes(cls)) {
+      return 'zap';
+    }
+    if (cls === 'temperature') {
+      return 'thermometer';
+    }
     return 'activity';
   }
-  if (kind === 'lock' && e.state !== 'locked') return 'lock-open';
-  if (kind === 'cover' && e.state === 'closed') return 'door-closed';
+  if (kind === 'lock' && e.state !== 'locked') {
+    return 'lock-open';
+  }
+  if (kind === 'cover' && e.state === 'closed') {
+    return 'door-closed';
+  }
   return ICONS[kind] ?? 'house';
 }
 
 /** The line under the name */
 function label(e: Entity): string {
   const kind = domain(e.id);
-  if (e.state === 'unavailable') return 'Unavailable';
+  if (e.state === 'unavailable') {
+    return 'Unavailable';
+  }
   if (kind === 'light') {
     const bri = e.attributes.brightness;
     return isOn(e)
@@ -665,13 +709,16 @@ function label(e: Entity): string {
         : 'On'
       : 'Off';
   }
-  if (kind === 'lock')
+  if (kind === 'lock') {
     return e.state === 'locked'
       ? 'Locked'
       : e.state === 'unlocked'
         ? 'Unlocked'
         : capital(e.state);
-  if (kind === 'cover') return capital(e.state);
+  }
+  if (kind === 'cover') {
+    return capital(e.state);
+  }
   if (kind === 'automation') {
     const last = e.attributes.last_triggered;
     return typeof last === 'string'
@@ -680,26 +727,35 @@ function label(e: Entity): string {
         ? 'Disabled'
         : 'Never run';
   }
-  if (kind === 'script') return e.state === 'on' ? 'Running' : 'Idle';
-  // a button's state is when it was last pressed
+  if (kind === 'script') {
+    return e.state === 'on' ? 'Running' : 'Idle';
+  }
+  // A button's state is when it was last pressed
   if (kind === 'button' || kind === 'input_button') {
     return Number.isNaN(Date.parse(e.state))
       ? 'Never pressed'
       : `Last pressed ${when(e.state)}`;
   }
-  if (kind === 'sensor')
+  if (kind === 'sensor') {
     return capital(
       String(e.attributes.device_class ?? 'sensor').replace(/_/g, ' ')
     );
-  if (kind === 'binary_sensor') return 'Binary sensor';
-  if (TOGGLES.includes(kind)) return isOn(e) ? 'On' : 'Off';
+  }
+  if (kind === 'binary_sensor') {
+    return 'Binary sensor';
+  }
+  if (TOGGLES.has(kind)) {
+    return isOn(e) ? 'On' : 'Off';
+  }
   return capital(kind.replace(/_/g, ' '));
 }
 
 /** The value at the right of a sensor-like row */
 function value(e: Entity): string {
   const kind = domain(e.id);
-  if (e.state === 'unavailable' || e.state === 'unknown') return '–';
+  if (e.state === 'unavailable' || e.state === 'unknown') {
+    return '–';
+  }
   if (kind === 'binary_sensor') {
     const [on, off] = BINARY[String(e.attributes.device_class ?? '')] ?? [
       'On',
@@ -737,38 +793,41 @@ function capital(text: string): string {
 }
 
 /** The centered state for every status but connected */
-function message(snap: Snapshot, theme: Theme): Element {
+function message(
+  status: Exclude<Status, 'connected'>,
+  error: string | null,
+  theme: Theme
+): Element {
   const texts: Record<
     Exclude<Status, 'connected'>,
     [string, string, string, boolean]
   > = {
-    connecting: [
-      'settings',
-      'Connecting to Home Assistant…',
-      'Waiting for the live connection to come up.',
-      false
-    ],
-    unreachable: [
-      'wifi-off',
-      'Home Assistant is unreachable',
-      `${snap.error ? `${snap.error}. ` : ''}Check the URL in the plugin settings and that the server is online. Retrying automatically.`,
-      true
-    ],
     'auth-failed': [
       'key',
       'Authentication failed',
       'Create a new long-lived access token in Home Assistant (Profile → Security) and paste it into the plugin settings.',
       true
     ],
+    connecting: [
+      'settings',
+      'Connecting to Home Assistant…',
+      'Waiting for the live connection to come up.',
+      false
+    ],
     unconfigured: [
       'settings',
       'Set up Home Assistant',
       'Add your Home Assistant URL and a long-lived access token in the plugin settings.',
       false
+    ],
+    unreachable: [
+      'wifi-off',
+      'Home Assistant is unreachable',
+      `${error ? `${error}. ` : ''}Check the URL in the plugin settings and that the server is online. Retrying automatically.`,
+      true
     ]
   };
-  const [iconName, title, body, bad] =
-    texts[snap.status as Exclude<Status, 'connected'>];
+  const [iconName, title, body, bad] = texts[status];
   return v_flex()
     .flex_1()
     .items_center()
@@ -849,9 +908,9 @@ function tile(theme: Theme, path: string, color: Color): Element {
     .child(new Icon(path).size('small').text_color(color));
 }
 
-/** gpui-component's slider look: a 6 px groove, the primary fill, a ringed 16 px thumb */
+/** Gpui-component's slider look: a 6 px groove, the primary fill, a ringed 16 px thumb */
 function slider(state: SliderState, theme: Theme): Element {
-  // px_2 like corona's dashboard sliders: the thumb overhangs the track by half its width
+  // Px_2 like corona's dashboard sliders: the thumb overhangs the track by half its width
   return Slider.new(state)
     .flex_1()
     .px_2()
@@ -896,7 +955,7 @@ function headerButton(id: string, icon: string, label: string): ButtonElement {
 }
 
 function iconButton(id: string, icon: string, label: string): ButtonElement {
-  // square, like the design's icon-sm: 28 px without padding
+  // Square, like the design's icon-sm: 28 px without padding
   return new Button(id)
     .cursor_pointer()
     .size('small')

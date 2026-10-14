@@ -1,10 +1,16 @@
-import { View, div, image } from 'gpui-kit';
-import type { AsyncContext, Context, Element } from 'gpui-kit';
+import {
+  type AsyncContext,
+  type Context,
+  type Element,
+  View,
+  div,
+  image
+} from 'gpui-kit';
 import type { Props } from 'gpui-shell';
 import { h_flex, v_flex } from 'gpui-base';
 import { Button } from 'gpui-component';
 import { readFile } from 'fs/promises';
-import { call, getState } from 'corona/plugin';
+import { type JsonValue, call, getState } from 'corona/plugin';
 import { language, t } from 'corona/i18n';
 import { all } from 'corona/settings';
 import { resumedAt, sleeping } from 'corona/power';
@@ -38,15 +44,25 @@ type Spawned = {
   stderr: string | null;
 };
 
+function isSpawned(value: JsonValue): value is Spawned {
+  return typeof value === 'object' && value !== null && 'pid' in value;
+}
+
+function isStrings(value: JsonValue): value is string[] {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === 'string')
+  );
+}
+
 /** A dashboard of every API: service calls, shared state, desktop, images, clipboard. */
 export default class Panel extends View {
   /** Shown per method, the answer or the error */
-  declare results: Record<string, string>;
-  declare busy: Set<string>;
+  declare private results: Record<string, string>;
+  declare private busy: Set<string>;
   /** The PNG read through the `fs.read` grant, for `image(Uint8Array)` */
-  declare bytes: Uint8Array | null;
+  declare private bytes: Uint8Array | null;
 
-  init(_props: Props | undefined, cx: AsyncContext): void {
+  public init(_props: Props | undefined, cx: AsyncContext): void {
     this.results = {};
     this.busy = new Set();
     this.bytes = null;
@@ -60,9 +76,10 @@ export default class Panel extends View {
     });
   }
 
-  render(_cx: Context): Element {
+  public render(_cx: Context): Element {
     const settings = all();
-    const spawned = getState('spawn') as Spawned | null;
+    const spawn = getState('spawn');
+    const spawned = isSpawned(spawn) ? spawn : null;
     const signals = getState('signals');
     return v_flex()
       .id('demo-panel')
@@ -74,7 +91,7 @@ export default class Panel extends View {
         h_flex()
           .gap_2()
           .items_center()
-          // plugin-relative path, and the same file as raster bytes
+          // Plugin-relative path, and the same file as raster bytes
           .child(image('assets/gradient.png').size_8())
           .child(this.bytes ? image(this.bytes).size_8() : div().size_8())
           .child(
@@ -113,12 +130,12 @@ export default class Panel extends View {
           .text_xs()
           .child(
             t('panel.sleep', {
-              sleeping: String(sleeping()),
+              event: String(getState('sleep') ?? '–'),
               resumed:
                 resumedAt() === null
                   ? '–'
                   : new Date(resumedAt() * 1000).toLocaleTimeString(),
-              event: String(getState('sleep') ?? '–')
+              sleeping: String(sleeping())
             })
           )
       )
@@ -196,8 +213,8 @@ export default class Panel extends View {
           .child(
             spawned
               ? t('panel.spawned', {
-                  pid: spawned.pid,
                   exit: spawned.exit ?? '…',
+                  pid: spawned.pid,
                   stderr: spawned.stderr ?? ''
                 })
               : '–'
@@ -220,7 +237,7 @@ export default class Panel extends View {
       );
   }
 
-  button(method: string): Element {
+  private button(method: string): Element {
     return new Button(`demo-${method}`)
       .label(t(`button.${method}`))
       .size('small')
@@ -241,16 +258,19 @@ export default class Panel extends View {
   }
 
   /** The service picks, since this panel closes for the dialog; see `pick` in service.ts */
-  pick(cx: Context): void {
+  private pick(cx: Context): void {
     cx.spawn(async (cx) => {
       const answer = await call('pick');
-      if (failed(answer)) this.results.desktop = `✗ ${answer.message}`;
+      if (failed(answer)) {
+        this.results.desktop = `✗ ${answer.message}`;
+      }
       cx.notify();
     });
   }
 
   /** What the service's last `pick` kept */
-  get picked(): string[] | null {
-    return getState('picked') as string[] | null;
+  private get picked(): string[] | null {
+    const picked = getState('picked');
+    return isStrings(picked) ? picked : null;
   }
 }

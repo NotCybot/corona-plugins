@@ -1,19 +1,32 @@
-import { nextCall, reply, fail, getState, setState } from 'corona/plugin';
-import type { Call, JsonValue } from 'corona/plugin';
 import {
+  type Call,
+  type JsonValue,
+  fail,
+  nextCall,
+  reply,
+  setState
+} from 'corona/plugin';
+import {
+  type Rule,
   call as dbusCall,
   getAll,
   nameHasOwner,
+  nextSignal,
   setProperty,
-  subscribe,
-  nextSignal
+  subscribe
 } from 'corona/dbus';
-import type { Rule } from 'corona/dbus';
 import { pickFiles } from 'corona/desktop';
 import { closePanel, openPanel } from 'corona/surface';
 import { get, set } from 'corona/settings';
-import process from 'process';
-import type { ChildProcess } from 'process';
+import process, { type ChildProcess } from 'process';
+import {
+  castStates,
+  isCastOptions,
+  isObject,
+  isStrings,
+  snapshot,
+  unmuteVolumes
+} from './state.ts';
 
 const KC = 'org.kde.kdeconnect';
 const ROOT = '/modules/kdeconnect';
@@ -48,9 +61,15 @@ export type Device = {
   media: Media | null;
 };
 /** What the views read from state `kc` */
-export type Snapshot = { running: boolean; devices: Device[] };
+export type Snapshot = {
+  running: boolean;
+  devices: Device[];
+};
 /** State `cast`: the adb serial and whether scrcpy runs, by device id */
-export type Cast = { serial: string | null; casting: boolean };
+export type Cast = {
+  serial: string | null;
+  casting: boolean;
+};
 export type CastOptions = {
   res: number;
   br: number;
@@ -59,10 +78,50 @@ export type CastOptions = {
   screenOff: boolean;
 };
 
-type Args = { [key: string]: JsonValue };
+type Args = Record<string, JsonValue>;
 
 /** Each answers with the line the panel shows */
 const methods: Record<string, (args: Args) => Promise<string | null>> = {
+  acceptPairing: async ({ id }) => {
+    await device(id, 'acceptPairing');
+    return 'Paired';
+  },
+  adbConnect,
+  adbDisconnect,
+  adbPair,
+  adbStatus,
+  browse: async ({ id }) => {
+    const ok = await plugin(id, 'sftp', 'startBrowsing');
+    if (ok === false) {
+      throw new Error(
+        String(await plugin(id, 'sftp', 'getMountError')) ||
+          'could not mount the phone'
+      );
+    }
+    return "Opening the phone's files…";
+  },
+  cancelPairing: async ({ id }) => {
+    await device(id, 'cancelPairing');
+    return null;
+  },
+  cast,
+  clipboard: async ({ id }) => {
+    await plugin(id, 'clipboard', 'sendClipboard');
+    return 'Clipboard sent';
+  },
+  media: async ({ id, action }) => {
+    await plugin(id, 'mprisremote', 'sendAction', [String(action)]);
+    return null;
+  },
+  mute,
+  pair: async ({ id }) => {
+    await device(id, 'requestPairing');
+    return 'Pairing requested; confirm on the phone';
+  },
+  ping: async ({ id }) => {
+    await plugin(id, 'ping', 'sendPing');
+    return 'Ping sent';
+  },
   refresh: async () => {
     await refresh();
     return null;
@@ -71,37 +130,11 @@ const methods: Record<string, (args: Args) => Promise<string | null>> = {
     await plugin(id, 'findmyphone', 'ring');
     return 'Ringing the phone';
   },
-  ping: async ({ id }) => {
-    await plugin(id, 'ping', 'sendPing');
-    return 'Ping sent';
-  },
-  browse: async ({ id }) => {
-    const ok = await plugin(id, 'sftp', 'startBrowsing');
-    if (ok === false)
-      throw new Error(
-        String(await plugin(id, 'sftp', 'getMountError')) ||
-          'could not mount the phone'
-      );
-    return "Opening the phone's files…";
-  },
-  clipboard: async ({ id }) => {
-    await plugin(id, 'clipboard', 'sendClipboard');
-    return 'Clipboard sent';
-  },
-  share,
-  volume: async ({ id, value }) => {
-    await mpris(id, 'volume', Math.round(Number(value)));
-    return null;
-  },
-  mute,
-  media: async ({ id, action }) => {
-    await plugin(id, 'mprisremote', 'sendAction', [String(action)]);
-    return null;
-  },
   seek: async ({ id, ms }) => {
     await mpris(id, 'position', Math.round(Number(ms)));
     return null;
   },
+  share,
   sms: async ({ id, number, text }) => {
     // ConversationAddress is a struct of one string, in a variant
     await plugin(
@@ -113,46 +146,35 @@ const methods: Record<string, (args: Args) => Promise<string | null>> = {
     );
     return `Message sent to ${number}`;
   },
-  pair: async ({ id }) => {
-    await device(id, 'requestPairing');
-    return 'Pairing requested; confirm on the phone';
-  },
-  acceptPairing: async ({ id }) => {
-    await device(id, 'acceptPairing');
-    return 'Paired';
-  },
-  cancelPairing: async ({ id }) => {
-    await device(id, 'cancelPairing');
+  stopCast: async ({ id }) => {
+    casts.get(String(id))?.kill();
     return null;
   },
   unpair: async ({ id }) => {
     await device(id, 'unpair');
     return 'Unpaired';
   },
-  adbStatus,
-  adbPair,
-  adbConnect,
-  adbDisconnect,
-  cast,
-  stopCast: async ({ id }) => {
-    casts.get(String(id))?.kill();
+  volume: async ({ id, value }) => {
+    await mpris(id, 'volume', Math.round(Number(value)));
     return null;
   }
 };
 
 export default async function main(): Promise<void> {
-  void watch({ bus: 'session', sender: KC, pathNamespace: ROOT });
-  // kdeconnectd starting or stopping
+  void watch({ bus: 'session', pathNamespace: ROOT, sender: KC });
+  // Kdeconnectd starting or stopping
   void watch({
+    arg0: KC,
     bus: 'session',
-    sender: 'org.freedesktop.DBus',
     member: 'NameOwnerChanged',
-    arg0: KC
+    sender: 'org.freedesktop.DBus'
   });
   queueRefresh();
   while (true) {
     const call = await nextCall();
-    if ('message' in call) break; // the service is stopping
+    if ('message' in call) {
+      break;
+    } // The service is stopping
     void answer(call);
   }
 }
@@ -164,9 +186,11 @@ async function answer({ id, method, args }: Call): Promise<void> {
     return;
   }
   try {
-    const line = await handler((args ?? {}) as Args);
-    // also through state: a call that outlives a closed panel still reaches the next one
-    if (line) setState('msg', line);
+    const line = await handler(isObject(args) ? args : {});
+    // Also through state: a call that outlives a closed panel still reaches the next one
+    if (line) {
+      setState('msg', line);
+    }
     reply(id, line);
   } catch (error) {
     setState('msg', `✗ ${message(error)}`);
@@ -178,7 +202,9 @@ async function answer({ id, method, args }: Call): Promise<void> {
 async function watch(rule: Rule): Promise<void> {
   try {
     const id = ok(await subscribe(rule));
-    while (ok(await nextSignal(id))) queueRefresh();
+    while (ok(await nextSignal(id))) {
+      queueRefresh();
+    }
   } catch (error) {
     console.warn(`kdeconnect: watching ${rule.sender}: ${message(error)}`);
   }
@@ -205,20 +231,23 @@ function queueRefresh(): void {
 async function refresh(): Promise<void> {
   try {
     if (!ok(await nameHasOwner('session', KC))) {
-      setState('kc', { running: false, devices: [] });
+      setState('kc', { devices: [], running: false });
       return;
     }
     const ids = ok(
       await dbusCall({
+        args: [false, false],
         bus: 'session',
         dest: KC,
-        path: ROOT,
         iface: 'org.kde.kdeconnect.daemon',
         method: 'devices',
-        args: [false, false],
+        path: ROOT,
         signature: 'bb'
       })
-    ) as string[];
+    );
+    if (!isStrings(ids)) {
+      throw new Error('unexpected device list');
+    }
     const devices = (await Promise.all(ids.map(read))).filter(
       (d): d is Device => d !== null
     );
@@ -227,40 +256,37 @@ async function refresh(): Promise<void> {
         Number(b.paired) - Number(a.paired) ||
         Number(b.reachable) - Number(a.reachable)
     );
-    setState('kc', { running: true, devices });
+    setState('kc', { devices, running: true });
   } catch (error) {
     console.warn(`kdeconnect: refresh: ${message(error)}`);
   }
 }
 
 async function read(id: string): Promise<Device | null> {
-  const props = (await getAll({
+  const props = await getAll({
     bus: 'session',
     dest: KC,
-    path: path(id),
-    iface: IFACE
-  })) as Record<string, JsonValue>;
-  if ('message' in props) return null; // gone meanwhile
+    iface: IFACE,
+    path: path(id)
+  });
+  if (!isObject(props) || 'message' in props) {
+    return null;
+  } // Gone meanwhile
   const reachable = props.isReachable === true;
   const paired = props.isPaired === true;
   const live = reachable && paired;
   const [battery, network, media] = live
     ? await Promise.all([
-        props_(id, 'battery'),
-        props_(id, 'connectivity_report'),
-        props_(id, 'mprisremote')
+        pluginProps(id, 'battery'),
+        pluginProps(id, 'connectivity_report'),
+        pluginProps(id, 'mprisremote')
       ])
     : [null, null, null];
-  const addresses = (props.reachableAddresses as string[] | null) ?? [];
+  const [address] = isStrings(props.reachableAddresses)
+    ? props.reachableAddresses
+    : [];
   return {
-    id,
-    name: String(props.name),
-    type: String(props.type),
-    reachable,
-    paired,
-    pairRequestedByPeer: props.isPairRequestedByPeer === true,
-    pairRequested: props.isPairRequested === true,
-    address: addresses[0] ?? null,
+    address: address ?? null,
     battery:
       battery && Number(battery.charge) >= 0
         ? {
@@ -268,43 +294,48 @@ async function read(id: string): Promise<Device | null> {
             charging: battery.isCharging === true
           }
         : null,
-    network:
-      network && network.cellularNetworkType
-        ? {
-            type: String(network.cellularNetworkType),
-            strength: Number(network.cellularNetworkStrength)
-          }
-        : null,
-    volume: media ? Number(media.volume) : null,
+    id,
     media:
       media && media.player
         ? {
-            title: String(media.title),
             artist: String(media.artist),
-            playing: media.isPlaying === true,
+            at: Date.now(),
             canSeek: media.canSeek === true,
             length: Number(media.length),
+            playing: media.isPlaying === true,
             position: Number(media.position),
-            at: Date.now()
+            title: String(media.title)
           }
-        : null
+        : null,
+    name: String(props.name),
+    network:
+      network && network.cellularNetworkType
+        ? {
+            strength: Number(network.cellularNetworkStrength),
+            type: String(network.cellularNetworkType)
+          }
+        : null,
+    pairRequested: props.isPairRequested === true,
+    pairRequestedByPeer: props.isPairRequestedByPeer === true,
+    paired,
+    reachable,
+    type: String(props.type),
+    volume: media ? Number(media.volume) : null
   };
 }
 
 /** Every property of a device plugin, null when the phone has it off */
-async function props_(
+async function pluginProps(
   id: string,
   name: string
 ): Promise<Record<string, JsonValue> | null> {
   const props = await getAll({
     bus: 'session',
     dest: KC,
-    path: `${path(id)}/${name}`,
-    iface: `${IFACE}.${name}`
+    iface: `${IFACE}.${name}`,
+    path: `${path(id)}/${name}`
   });
-  return props && typeof props === 'object' && !('message' in props)
-    ? (props as Record<string, JsonValue>)
-    : null;
+  return isObject(props) && !('message' in props) ? props : null;
 }
 
 function path(id: JsonValue): string {
@@ -316,9 +347,9 @@ async function device(id: JsonValue, method: string): Promise<JsonValue> {
     await dbusCall({
       bus: 'session',
       dest: KC,
-      path: path(id),
       iface: IFACE,
-      method
+      method,
+      path: path(id)
     })
   );
   queueRefresh();
@@ -333,12 +364,12 @@ async function plugin(
   signature?: string
 ): Promise<JsonValue> {
   const call = {
+    args,
     bus: 'session' as const,
     dest: KC,
-    path: `${path(id)}/${name}`,
     iface: `${IFACE}.${name}`,
     method,
-    args
+    path: `${path(id)}/${name}`
   };
   return ok(await dbusCall(signature ? { ...call, signature } : call));
 }
@@ -352,21 +383,19 @@ async function mpris(
     await setProperty({
       bus: 'session',
       dest: KC,
-      path: `${path(id)}/mprisremote`,
       iface: `${IFACE}.mprisremote`,
       name,
-      value,
-      signature: 'i'
+      path: `${path(id)}/mprisremote`,
+      signature: 'i',
+      value
     })
   );
 }
 
 /** Mutes to 0 and back to the volume before, kept per device in state `unmute` */
 async function mute({ id }: Args): Promise<string | null> {
-  const dev = ((getState('kc') as Snapshot | null)?.devices ?? []).find(
-    (d) => d.id === id
-  );
-  const unmute = (getState('unmute') as Record<string, number> | null) ?? {};
+  const dev = (snapshot()?.devices ?? []).find((d) => d.id === id);
+  const unmute = unmuteVolumes();
   const volume = dev?.volume ?? 0;
   if (volume > 0) {
     setState('unmute', { ...unmute, [String(id)]: volume });
@@ -382,8 +411,10 @@ async function mute({ id }: Args): Promise<string | null> {
  * panel drops its pending calls, so the service picks.
  */
 async function share({ id }: Args): Promise<string | null> {
-  const paths = await pick({ multiple: true, acceptLabel: 'Share' });
-  if (!paths) return null;
+  const paths = await pick({ acceptLabel: 'Share', multiple: true });
+  if (!paths) {
+    return null;
+  }
   await plugin(
     id,
     'share',
@@ -402,8 +433,13 @@ async function pick(
   closePanel('main');
   const picked = await pickFiles(options);
   openPanel('main');
-  if (picked !== null && 'message' in picked) throw new Error(picked.message);
-  return picked as string[] | null;
+  if (picked === null) {
+    return null;
+  }
+  if ('message' in picked) {
+    throw new Error(picked.message);
+  }
+  return picked;
 }
 
 // ---- casting: adb over Wi-Fi, scrcpy for the window ----
@@ -412,14 +448,15 @@ async function pick(
 async function adb(args: string[]): Promise<string> {
   const out = await process.run('adb', args);
   const text = `${out.stdout}${out.stderr}`.trim();
-  if (out.code !== 0 || /^(failed|error)/im.test(text))
+  if (out.code !== 0 || /^(?:failed|error)/im.test(text)) {
     throw new Error(text || `adb ${args[0]} exited ${out.code}`);
+  }
   return text;
 }
 
 function setCast(id: JsonValue, patch: Partial<Cast>): void {
-  const all = (getState('cast') as Record<string, Cast> | null) ?? {};
-  const now = all[String(id)] ?? { serial: null, casting: false };
+  const all = castStates();
+  const now = all[String(id)] ?? { casting: false, serial: null };
   setState('cast', { ...all, [String(id)]: { ...now, ...patch } });
 }
 
@@ -445,7 +482,9 @@ async function adbPair({ address, pin }: Args): Promise<string> {
 
 async function adbConnect({ id, address }: Args): Promise<string> {
   const out = await adb(['connect', String(address)]);
-  if (!/connected to/.test(out)) throw new Error(out);
+  if (!/connected to/.test(out)) {
+    throw new Error(out);
+  }
   setCast(id, { serial: String(address) });
   return `ADB connected to ${address}`;
 }
@@ -460,29 +499,39 @@ async function adbDisconnect({ id, serial }: Args): Promise<string> {
 const casts = new Map<string, ChildProcess>();
 
 async function cast({ id, serial, options }: Args): Promise<string | null> {
-  if (casts.has(String(id))) throw new Error('already casting');
-  const o = options as CastOptions;
+  if (casts.has(String(id))) {
+    throw new Error('already casting');
+  }
+  if (!isCastOptions(options)) {
+    throw new Error('missing cast options');
+  }
+  const o = options;
   const args = [
     `--serial=${serial}`,
     `--max-size=${o.res}`,
     `--video-bit-rate=${o.br}M`,
     `--max-fps=${o.fps}`
   ];
-  if (o.screenOff) args.push('--turn-screen-off');
+  if (o.screenOff) {
+    args.push('--turn-screen-off');
+  }
   if (o.record) {
     let dir = get('recordings');
     if (!dir) {
       const picked = await pick({
-        directory: true,
-        acceptLabel: 'Save recordings here'
+        acceptLabel: 'Save recordings here',
+        directory: true
       });
-      if (!picked) return null;
-      dir = picked[0];
+      if (!picked) {
+        return null;
+      }
+      [dir] = picked;
       const error = set('recordings', dir);
-      if (error)
+      if (error) {
         console.warn(
           `kdeconnect: keeping the recordings folder: ${error.message}`
         );
+      }
     }
     const stamp = new Date()
       .toISOString()
@@ -495,34 +544,40 @@ async function cast({ id, serial, options }: Args): Promise<string | null> {
   casts.set(String(id), child);
   setCast(id, { casting: true });
   void (async () => {
-    // the last stderr line says why scrcpy stopped
+    // The last stderr line says why scrcpy stopped
     let last: string | null = null;
     for (
       let line = await child.readErrLine();
       line !== null;
       line = await child.readErrLine()
-    )
+    ) {
       last = line;
+    }
     const status = await child.wait();
     casts.delete(String(id));
     setCast(id, { casting: false });
-    if (status.code)
+    if (status.code) {
       setState('msg', `✗ scrcpy: ${last ?? `exited ${status.code}`}`);
+    }
   })();
   return 'Casting';
 }
 
 /** `value` without its failure, which is thrown */
-function ok<T>(value: T): Exclude<T, { message: string }> {
-  if (
-    value &&
+function ok<T>(value: T | { message: string }): T {
+  if (failed(value)) {
+    throw new Error(value.message);
+  }
+  return value;
+}
+
+function failed(value: unknown): value is { message: string } {
+  return (
     typeof value === 'object' &&
+    value !== null &&
     !Array.isArray(value) &&
     'message' in value
-  ) {
-    throw new Error(String((value as { message: unknown }).message));
-  }
-  return value as Exclude<T, { message: string }>;
+  );
 }
 
 function message(error: unknown): string {

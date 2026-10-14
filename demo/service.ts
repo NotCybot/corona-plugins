@@ -1,31 +1,35 @@
-import { nextCall, reply, fail, getState, setState } from 'corona/plugin';
-import type { Call, JsonValue } from 'corona/plugin';
-import { notify, nextAction } from 'corona/notifications';
 import {
+  type Call,
+  type JsonValue,
+  fail,
+  getState,
+  nextCall,
+  reply,
+  setState
+} from 'corona/plugin';
+import { nextAction, notify } from 'corona/notifications';
+import {
+  type Rule,
   call as dbusCall,
   getProperty,
   nameHasOwner,
-  subscribe,
-  nextSignal
+  nextSignal,
+  subscribe
 } from 'corona/dbus';
-import type { Rule } from 'corona/dbus';
 import * as secrets from 'corona/secrets';
-import { readFile } from 'fs/promises';
+import { open, readFile } from 'fs/promises';
 import {
   listenRedirect,
   nextRedirect,
   openUri,
   pickFiles
 } from 'corona/desktop';
-import { open } from 'fs/promises';
 import { nextSleepEvent } from 'corona/power';
 import { closePanel, openPanel } from 'corona/surface';
 import { get, set, setOptions } from 'corona/settings';
 import { t } from 'corona/i18n';
-import process from 'process';
-import type { ChildProcess } from 'process';
-import { connect } from 'net';
-import type { Socket } from 'net';
+import process, { type ChildProcess } from 'process';
+import { type Socket, connect } from 'net';
 import { Buffer } from 'buffer';
 import type { AsyncContext } from 'gpui-kit';
 import { message, ok } from './util.ts';
@@ -36,52 +40,59 @@ const TEST_URL = 'https://example.com/';
 
 /** What `call(method)` in a view and `corona ipc plugin demo <method>` reach */
 const methods: Record<string, (args: JsonValue) => Promise<JsonValue>> = {
-  ping,
-  time,
-  spawn,
-  notify: notifyAndWait,
   dbus,
-  tailscale,
   fetch: fetchBoth,
-  secret,
-  pick,
-  richNotify,
-  stdin,
   files,
-  unixFetch,
   ipnBus,
-  settings,
+  notify: notifyAndWait,
+  oauth,
+  pick,
+  ping,
+  richNotify,
+  secret,
   secretSetting,
-  oauth
+  settings,
+  spawn,
+  stdin,
+  tailscale,
+  time,
+  unixFetch
 };
 
 /** What the dynamic `favorite` select offers, set by the service at start */
 const FAVORITES = [
-  { value: 'none', label: 'None' },
-  { value: 'tea', label: 'Tea' },
-  { value: 'coffee', label: 'Coffee' },
-  { value: 'water', label: 'Water' }
+  { label: 'None', value: 'none' },
+  { label: 'Tea', value: 'tea' },
+  { label: 'Coffee', value: 'coffee' },
+  { label: 'Water', value: 'water' }
 ];
 
 export default async function main(cx: AsyncContext): Promise<void> {
   let beats = 0;
   cx.timer.every(1000, () => {
-    if (get('heartbeat')) setState('heartbeat', ++beats);
+    if (get('heartbeat')) {
+      beats += 1;
+      setState('heartbeat', beats);
+    }
   });
   // KDE Connect only emits custom signals (battery, reachability, ...)
   void watch({
     bus: 'session',
-    sender: KDECONNECT,
-    pathNamespace: '/modules/kdeconnect'
+    pathNamespace: '/modules/kdeconnect',
+    sender: KDECONNECT
   });
   const options = setOptions('favorite', FAVORITES);
-  if (options) console.warn(`demo: setOptions: ${options.message}`);
+  if (options) {
+    console.warn(`demo: setOptions: ${options.message}`);
+  }
   void sleepEvents();
 
   while (true) {
     const call = await nextCall();
-    if ('message' in call) break; // the service is stopping
-    // not awaited: `notify` waits for a click while other calls go on
+    if ('message' in call) {
+      break;
+    } // The service is stopping
+    // Not awaited: `notify` waits for a click while other calls go on
     void answer(call);
   }
 }
@@ -105,7 +116,9 @@ async function watch(rule: Rule): Promise<void> {
     const id = ok(await subscribe(rule));
     while (true) {
       const signal = ok(await nextSignal(id));
-      if (!signal) return;
+      if (!signal) {
+        return;
+      }
       const seen = getState('signals');
       const line = `${signal.member} ${JSON.stringify(signal.args)}`;
       setState(
@@ -120,17 +133,18 @@ async function watch(rule: Rule): Promise<void> {
 
 async function ping(): Promise<JsonValue> {
   return {
-    pong: true,
     at: new Date().toISOString(),
-    greeting: get('greeting')
+    greeting: get('greeting'),
+    pong: true
   };
 }
 
 /** `date` resolved through the granted PATH */
 async function time(): Promise<JsonValue> {
   const out = await process.run('date', ['+%F %T %Z']);
-  if (out.code !== 0)
+  if (out.code !== 0) {
     throw new Error(out.stderr.trim() || `date exited ${out.code}`);
+  }
   return out.stdout.trim();
 }
 
@@ -138,14 +152,16 @@ let child: ChildProcess | null = null;
 
 /** A short `sh` loop whose lines stream into state `spawn` */
 async function spawn(): Promise<JsonValue> {
-  if (child) throw new Error(t('error.running'));
+  if (child) {
+    throw new Error(t('error.running'));
+  }
   const script =
     'echo "HOME=$HOME"; for i in 1 2 3 4 5; do echo "line $i"; sleep 1; done; echo bye >&2; exit 3';
   const running = process.spawn('sh', ['-c', script]);
   child = running;
   const lines: string[] = [];
   const publish = (exit: JsonValue, stderr: string | null) =>
-    setState('spawn', { pid: running.pid, lines: [...lines], exit, stderr });
+    setState('spawn', { exit, lines: [...lines], pid: running.pid, stderr });
   publish(null, null);
   void (async () => {
     try {
@@ -171,15 +187,15 @@ async function spawn(): Promise<JsonValue> {
 async function notifyAndWait(): Promise<JsonValue> {
   const id = ok(
     await notify({
-      summary: t('notify.summary'),
-      body: t('notify.body', { greeting: get('greeting') }),
-      icon: 'dialog-information',
-      urgency: get('urgency'),
       actions: [
         { key: 'default', label: t('notify.open') },
         { key: 'yes', label: t('notify.yes') },
         { key: 'no', label: t('notify.no') }
-      ]
+      ],
+      body: t('notify.body', { greeting: get('greeting') }),
+      icon: 'dialog-information',
+      summary: t('notify.summary'),
+      urgency: get('urgency')
     })
   );
   return waitForAction(id);
@@ -189,11 +205,15 @@ async function notifyAndWait(): Promise<JsonValue> {
 async function waitForAction(id: number): Promise<JsonValue> {
   setState('action', t('notify.waiting', { id }));
   while (true) {
-    // every waiter gets every action of the plugin's notifications
+    // Every waiter gets every action of the plugin's notifications
     const action = ok(await nextAction());
-    if (action.id !== id) continue;
+    if (action.id !== id) {
+      continue;
+    }
     const picked =
-      action.text == null ? action.key : `${action.key}: ${action.text}`;
+      action.text === null || action.text === undefined
+        ? action.key
+        : `${action.key}: ${action.text}`;
     setState('action', t('notify.picked', { id, key: picked }));
     return { id, key: action.key, text: action.text ?? null };
   }
@@ -206,12 +226,12 @@ async function dbus(): Promise<JsonValue> {
     // `devices` is a Qt overload (0, 1 and 2 args): no signature, so the 2-argument one is picked by arity
     const ids = ok(
       await dbusCall({
+        args: [false, false],
         bus: 'session',
         dest: KDECONNECT,
-        path: '/modules/kdeconnect',
         iface: 'org.kde.kdeconnect.daemon',
         method: 'devices',
-        args: [false, false]
+        path: '/modules/kdeconnect'
       })
     );
     const list = Array.isArray(ids) ? ids.map(String) : [];
@@ -222,15 +242,15 @@ async function dbus(): Promise<JsonValue> {
           await getProperty({
             bus: 'session',
             dest: KDECONNECT,
-            path: `/modules/kdeconnect/devices/${device}`,
             iface: 'org.kde.kdeconnect.device',
-            name: 'name'
+            name: 'name',
+            path: `/modules/kdeconnect/devices/${device}`
           })
         )
       }))
     );
   }
-  return { kdeconnect, devices };
+  return { devices, kdeconnect };
 }
 
 type TailscaleStatus = {
@@ -241,7 +261,7 @@ type TailscaleStatus = {
 
 /** LocalAPI over the daemon's unix socket; HTTP/1.0 so the body ends at EOF, unchunked */
 async function tailscale(): Promise<JsonValue> {
-  let socket: Socket;
+  let socket: Socket | null = null;
   try {
     socket = await connect({ path: TAILSCALE });
   } catch (error) {
@@ -250,7 +270,7 @@ async function tailscale(): Promise<JsonValue> {
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
-    // bytes, not a string: `write` takes a Uint8Array too
+    // Bytes, not a string: `write` takes a Uint8Array too
     const request =
       'GET /localapi/v0/status HTTP/1.0\r\nHost: local-tailscaled.sock\r\n\r\n';
     await socket.write(new Uint8Array(Buffer.from(request)));
@@ -274,19 +294,19 @@ async function tailscale(): Promise<JsonValue> {
   const text = Buffer.from(bytes).toString('utf8');
   const split = text.indexOf('\r\n\r\n');
   const statusLine = text.slice(0, text.indexOf('\r\n'));
-  const body = split < 0 ? '' : text.slice(split + 4);
+  const body = split === -1 ? '' : text.slice(split + 4);
   if (!/ 200 /.test(statusLine)) {
     // 403 without operator rights: `tailscale set --operator=$USER`
-    return { available: true, status: statusLine, body: body.slice(0, 300) };
+    return { available: true, body: body.slice(0, 300), status: statusLine };
   }
-  const status = JSON.parse(body) as TailscaleStatus;
+  const status: TailscaleStatus = JSON.parse(body);
   return {
     available: true,
-    status: statusLine,
     backend: status.BackendState ?? null,
     host: status.Self?.HostName ?? null,
     ips: status.Self?.TailscaleIPs ?? [],
-    peers: Object.keys(status.Peer ?? {}).length
+    peers: Object.keys(status.Peer ?? {}).length,
+    status: statusLine
   };
 }
 
@@ -304,17 +324,17 @@ async function fetchBoth(): Promise<JsonValue> {
       chunk !== null;
       chunk = await stream.read()
     ) {
-      chunks++;
+      chunks += 1;
       streamed += chunk.length;
     }
   } finally {
     stream.close();
   }
   return {
-    status: response.status,
     bytes,
-    streamStatus: stream.status,
     chunks,
+    status: response.status,
+    streamStatus: stream.status,
     streamed
   };
 }
@@ -327,7 +347,7 @@ async function secret(): Promise<JsonValue> {
   const read = ok(await secrets.get(key));
   ok(await secrets.remove(key));
   const afterRemove = ok(await secrets.get(key));
-  return { stored: value, read, matches: read === value, afterRemove };
+  return { afterRemove, matches: read === value, read, stored: value };
 }
 
 /**
@@ -339,10 +359,12 @@ async function secret(): Promise<JsonValue> {
 async function pick(): Promise<JsonValue> {
   closePanel('main');
   const picked = ok(
-    await pickFiles({ multiple: true, acceptLabel: t('panel.pick') })
+    await pickFiles({ acceptLabel: t('panel.pick'), multiple: true })
   );
   // `null` when cancelled: keep the last pick
-  if (picked) setState('picked', picked);
+  if (picked) {
+    setState('picked', picked);
+  }
   openPanel('main');
   return picked;
 }
@@ -351,7 +373,9 @@ async function pick(): Promise<JsonValue> {
 async function sleepEvents(): Promise<void> {
   while (true) {
     const event = await nextSleepEvent();
-    if ('message' in event) return; // the service is stopping
+    if ('message' in event) {
+      return;
+    } // The service is stopping
     setState(
       'sleep',
       `${event.sleeping ? 'suspending' : 'resumed'} at ${new Date().toLocaleTimeString()}`
@@ -363,12 +387,12 @@ async function sleepEvents(): Promise<void> {
 async function richNotify(): Promise<JsonValue> {
   const id = ok(
     await notify({
-      summary: t('notify.rich_summary'),
-      body: t('notify.rich_body'),
-      // the PNG through the `fs.read` grant, sent as the notification's picture
-      image: await readFile('assets/gradient.png'),
       actions: [{ key: 'open', label: t('notify.open') }],
+      body: t('notify.rich_body'),
+      // The PNG through the `fs.read` grant, sent as the notification's picture
+      image: await readFile('assets/gradient.png'),
       reply: { placeholder: t('notify.reply_placeholder') },
+      summary: t('notify.rich_summary'),
       timeout: 30_000
     })
   );
@@ -388,10 +412,11 @@ async function stdin(): Promise<JsonValue> {
     let line = await child.readLine();
     line !== null;
     line = await child.readLine()
-  )
+  ) {
     lines.push(line);
+  }
   const status = await child.wait();
-  return { lines, code: status.code };
+  return { code: status.code, lines };
 }
 
 /** A file handle in the data dir: write, append, then read back in 4-byte pieces */
@@ -432,18 +457,19 @@ async function unixFetch(): Promise<JsonValue> {
   const response = await fetch(
     'http://local-tailscaled.sock/localapi/v0/status?peers=false',
     {
-      unix: TAILSCALE,
-      timeout: 5_000
+      timeout: 5000,
+      unix: TAILSCALE
     }
   );
   const text = await response.text();
-  if (!response.ok)
-    return { status: response.status, body: text.slice(0, 300) };
-  const status = JSON.parse(text) as TailscaleStatus;
+  if (!response.ok) {
+    return { body: text.slice(0, 300), status: response.status };
+  }
+  const status: TailscaleStatus = JSON.parse(text);
   return {
-    status: response.status,
     backend: status.BackendState ?? null,
-    host: status.Self?.HostName ?? null
+    host: status.Self?.HostName ?? null,
+    status: response.status
   };
 }
 
@@ -452,26 +478,29 @@ async function ipnBus(): Promise<JsonValue> {
   const stream = await fetch(
     'http://local-tailscaled.sock/localapi/v0/watch-ipn-bus?mask=2',
     {
-      unix: TAILSCALE,
       stream: true,
-      timeout: 5_000
+      timeout: 5000,
+      unix: TAILSCALE
     }
   );
   const bytes: number[] = [];
   try {
     while (!bytes.includes(10)) {
       const chunk = await stream.read();
-      if (chunk === null) break;
+      if (chunk === null) {
+        break;
+      }
       bytes.push(...chunk);
     }
   } finally {
     stream.close();
   }
-  const line = Buffer.from(bytes).toString('utf8').split('\n')[0];
-  if (stream.status !== 200)
-    return { status: stream.status, body: line.slice(0, 300) };
-  const notify = JSON.parse(line) as { State?: number };
-  return { status: stream.status, state: notify.State ?? null };
+  const [line] = Buffer.from(bytes).toString('utf8').split('\n');
+  if (stream.status !== 200) {
+    return { body: line.slice(0, 300), status: stream.status };
+  }
+  const notify: { State?: number } = JSON.parse(line);
+  return { state: notify.State ?? null, status: stream.status };
 }
 
 /** Steps the dynamic `favorite` select through the options the service set */
@@ -480,15 +509,15 @@ async function settings(): Promise<JsonValue> {
   const index = FAVORITES.findIndex((option) => option.value === before);
   const after = FAVORITES[(index + 1) % FAVORITES.length].value;
   ok(set('favorite', after));
-  // the write lands after this render, so `get` still answers `before` here
-  return { before, after };
+  // The write lands after this render, so `get` still answers `before` here
+  return { after, before };
 }
 
 /** The `token` secret setting, entered in corona's settings app */
 async function secretSetting(): Promise<JsonValue> {
   const token = ok(await secrets.get('token'));
-  // never echo the secret itself
-  return token === null ? { set: false } : { set: true, length: token.length };
+  // Never echo the secret itself
+  return token === null ? { set: false } : { length: token.length, set: true };
 }
 
 /** A loopback OAuth-style redirect: the browser is sent to our own listener */

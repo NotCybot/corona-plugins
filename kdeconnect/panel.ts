@@ -1,22 +1,30 @@
-import { View, div } from 'gpui-kit';
-import type { AsyncContext, Context, Element, NativeElement } from 'gpui-kit';
+import {
+  type AsyncContext,
+  type Context,
+  type Element,
+  type NativeElement,
+  View,
+  div
+} from 'gpui-kit';
 import type { Props } from 'gpui-shell';
-import type { Theme } from 'gpui-base';
 import {
   Slider,
   SliderIndicator,
   SliderState,
   SliderThumb,
   SliderTrack,
+  type SliderValue,
+  type Theme,
   h_flex,
   v_flex
 } from 'gpui-base';
-import type { SliderValue } from 'gpui-base';
 import {
   Button,
+  type ButtonElement,
   Icon,
   InputGroup,
   InputGroupAddon,
+  type InputGroupElement,
   InputGroupInput,
   InputState,
   Select,
@@ -24,19 +32,18 @@ import {
   Tab,
   TabBar
 } from 'gpui-component';
-import type { ButtonElement, InputGroupElement } from 'gpui-component';
-import { call, getState } from 'corona/plugin';
-import type { JsonValue } from 'corona/plugin';
+import { type JsonValue, call } from 'corona/plugin';
 import { closePanel } from 'corona/surface';
-import type { Cast, CastOptions, Device, Snapshot } from './service.ts';
-import { DEVICE_ICON, ONLINE, dot, tint } from './ui.ts';
+import type { CastOptions, Device, Snapshot } from './service.ts';
+import { DEVICE_ICON, ONLINE, dot, label, tint } from './ui.ts';
+import { castStates, snapshot, statusLine } from './state.ts';
 
 const TABS = ['Controls', 'Cast', 'Messages', 'Devices'];
 
 const PRESETS: { label: string; res: number; br: number; fps: number }[] = [
-  { label: 'HD', res: 1920, br: 16, fps: 60 },
-  { label: 'Balanced', res: 1280, br: 8, fps: 60 },
-  { label: 'Saver', res: 1024, br: 4, fps: 30 }
+  { br: 16, fps: 60, label: 'HD', res: 1920 },
+  { br: 8, fps: 60, label: 'Balanced', res: 1280 },
+  { br: 4, fps: 30, label: 'Saver', res: 1024 }
 ];
 const CUSTOM = PRESETS.length;
 
@@ -47,45 +54,48 @@ const CUSTOM = PRESETS.length;
  * `min` above it panics the whole shell.
  */
 const QUALITY = [
-  { key: 'res', short: 'RES', min: 4, max: 60, per: 64, unit: 'p' },
-  { key: 'br', short: 'BIT', min: 1, max: 30, per: 1, unit: ' Mbps' },
-  { key: 'fps', short: 'FPS', min: 1, max: 240, per: 1, unit: ' fps' }
+  { key: 'res', max: 60, min: 4, per: 64, short: 'RES', unit: 'p' },
+  { key: 'br', max: 30, min: 1, per: 1, short: 'BIT', unit: ' Mbps' },
+  { key: 'fps', max: 240, min: 1, per: 1, short: 'FPS', unit: ' fps' }
 ] as const;
 
 /** Seek runs in thousandths of the track, since a slider's range is fixed when it is made */
 const SEEK_STEPS = 1000;
 
-type Favorite = { number: string; name: string };
+type Favorite = {
+  number: string;
+  name: string;
+};
 
 /** KDE Connect's devices from the service, and their actions as service calls. */
 export default class Panel extends View {
-  declare tab: number;
-  declare selected: string | null;
-  declare busy: Set<string>;
-  declare favorites: Favorite[];
-  declare editMode: boolean;
+  declare private tab: number;
+  declare private selected: string | null;
+  declare private busy: Set<string>;
+  declare private favorites: Favorite[];
+  declare private editMode: boolean;
   /** The favorite being renamed, by number */
-  declare editing: string | null;
-  declare dest: string;
-  declare text: string;
-  declare destInput: InputState;
-  declare textInput: InputState;
-  declare nameInput: InputState;
-  declare castOptions: CastOptions;
-  declare preset: number;
-  declare adbSetup: boolean;
+  declare private editing: string | null;
+  declare private dest: string;
+  declare private text: string;
+  declare private destInput: InputState;
+  declare private textInput: InputState;
+  declare private nameInput: InputState;
+  declare private castOptions: CastOptions;
+  declare private preset: number;
+  declare private adbSetup: boolean;
   /** 0 pair, 1 connect */
-  declare adbMode: number;
-  declare pairPort: InputState;
-  declare pairPin: InputState;
-  declare connectAddress: InputState;
-  declare volume: SliderState;
-  declare seek: SliderState;
-  declare quality: Record<(typeof QUALITY)[number]['key'], SliderState>;
+  declare private adbMode: number;
+  declare private pairPort: InputState;
+  declare private pairPin: InputState;
+  declare private connectAddress: InputState;
+  declare private volume: SliderState;
+  declare private seek: SliderState;
+  declare private quality: Record<string, SliderState>;
   /** A slider being dragged is not moved by the state */
-  declare dragging: SliderState | null;
+  declare private dragging: SliderState | null;
 
-  init(_props: Props | undefined, cx: AsyncContext): void {
+  public init(_props: Props | undefined, cx: AsyncContext): void {
     this.tab = 0;
     this.selected = null;
     this.busy = new Set();
@@ -110,24 +120,27 @@ export default class Panel extends View {
     this.connectAddress = InputState('address:port');
     this.dragging = null;
 
-    this.volume = this.slider({ min: 0, max: 100 }, (value) => {
+    this.volume = this.slider({ max: 100, min: 0 }, (value) => {
       const device = this.device();
-      if (device) this.run('volume', { id: device.id, value }, cx);
+      if (device) {
+        this.run('volume', { id: device.id, value }, cx);
+      }
     });
-    this.seek = this.slider({ min: 0, max: SEEK_STEPS }, (value) => {
+    this.seek = this.slider({ max: SEEK_STEPS, min: 0 }, (value) => {
       const media = this.device()?.media;
-      if (media)
+      if (media) {
         this.run(
           'seek',
           { id: this.device().id, ms: (value / SEEK_STEPS) * media.length },
           cx
         );
+      }
     });
     this.quality = Object.fromEntries(
       QUALITY.map((q) => [
         q.key,
         this.slider(
-          { min: q.min, max: q.max, value: this.castOptions[q.key] / q.per },
+          { max: q.max, min: q.min, value: this.castOptions[q.key] / q.per },
           () => store('cast', this.castOptions),
           (value, cx) => {
             this.castOptions = { ...this.castOptions, [q.key]: value * q.per };
@@ -135,21 +148,24 @@ export default class Panel extends View {
           }
         )
       ])
-    ) as Panel['quality'];
+    );
 
     cx.spawn(async (cx) => {
-      // the signals keep the state current; this catches up on whatever was missed while closed
+      // The signals keep the state current; this catches up on whatever was missed while closed
       await call('refresh');
       const device = this.device();
-      if (device?.address)
-        await call('adbStatus', { id: device.id, address: device.address });
+      if (device?.address) {
+        await call('adbStatus', { address: device.address, id: device.id });
+      }
       cx.notify();
     });
-    // ponytail: KDE Connect reports the position only when it changes; while
-    // playing, the seek bar moves on locally, once a second, and only then
+    // Ponytail: KDE Connect reports the position only when it changes; while
+    // Playing, the seek bar moves on locally, once a second, and only then
     cx.timer.every(1000, (cx) => {
       const media = this.device()?.media;
-      if (!media?.playing || this.dragging === this.seek) return;
+      if (!media?.playing || this.dragging === this.seek) {
+        return;
+      }
       this.seek.set_value(
         Math.round((position(media) / Math.max(media.length, 1)) * SEEK_STEPS)
       );
@@ -158,7 +174,7 @@ export default class Panel extends View {
   }
 
   /** A slider whose `release` runs `commit`, and whose drag stops the state moving it */
-  slider(
+  private slider(
     options: { min: number; max: number; step?: number; value?: number },
     commit: (value: number) => void,
     change?: (value: number, cx: Context) => void
@@ -176,10 +192,8 @@ export default class Panel extends View {
   }
 
   /** The device the panel shows: the one picked, else the first reachable paired one */
-  device(): Device | null {
-    const paired = ((getState('kc') as Snapshot | null)?.devices ?? []).filter(
-      (d) => d.paired
-    );
+  private device(): Device | null {
+    const paired = (snapshot()?.devices ?? []).filter((d) => d.paired);
     return (
       paired.find((d) => d.id === this.selected) ??
       paired.find((d) => d.reachable) ??
@@ -188,14 +202,14 @@ export default class Panel extends View {
     );
   }
 
-  render(cx: Context): Element {
+  public render(cx: Context): Element {
     const theme = cx.theme();
-    const snap = getState('kc') as Snapshot | null;
+    const snap = snapshot();
     const device = this.device();
     const nearby = (snap?.devices ?? []).filter(
       (d) => !d.paired && (d.reachable || d.pairRequestedByPeer)
     );
-    const status = getState('msg') as string | null;
+    const status = statusLine();
 
     const root = v_flex().size_full().p_2().gap_3().child(this.header(theme));
     if (!snap?.running) {
@@ -255,7 +269,7 @@ export default class Panel extends View {
   }
 
   /** Moves the sliders to the device's values, unless one is being dragged */
-  sync(device: Device): void {
+  private sync(device: Device): void {
     if (
       this.dragging !== this.volume &&
       device.volume !== null &&
@@ -263,16 +277,18 @@ export default class Panel extends View {
     ) {
       this.volume.set_value(device.volume);
     }
-    const media = device.media;
+    const { media } = device;
     if (this.dragging !== this.seek) {
       const value = media
         ? Math.round((position(media) / Math.max(media.length, 1)) * SEEK_STEPS)
         : 0;
-      if (single(this.seek.value()) !== value) this.seek.set_value(value);
+      if (single(this.seek.value()) !== value) {
+        this.seek.set_value(value);
+      }
     }
   }
 
-  header(theme: Theme): Element {
+  private header(theme: Theme): Element {
     return h_flex()
       .flex_none()
       .items_center()
@@ -294,7 +310,7 @@ export default class Panel extends View {
   }
 
   /** The device select and its status line: reachability, battery, network, address */
-  picker(snap: Snapshot, device: Device, theme: Theme): Element {
+  private picker(snap: Snapshot, device: Device, theme: Theme): Element {
     const paired = snap.devices.filter((d) => d.paired);
     const info: Element[] = [
       h_flex()
@@ -328,19 +344,21 @@ export default class Panel extends View {
           .child(`${charge}%`)
       );
     }
-    if (device.network)
+    if (device.network) {
       info.push(
         div().child(
           `${device.network.type} ${Math.max(0, device.network.strength)}/4`
         )
       );
-    if (device.reachable && device.address)
+    }
+    if (device.reachable && device.address) {
       info.push(div().font_family(theme.typography.mono).child(device.address));
+    }
     return v_flex()
       .flex_none()
       .gap_2()
       .child(
-        // keyed by the device: a Select keeps its own choice, so a new one shows the current device
+        // Keyed by the device: a Select keeps its own choice, so a new one shows the current device
         new Select(
           `kc-device-${device.id}`,
           () =>
@@ -348,7 +366,7 @@ export default class Panel extends View {
               id: d.id,
               label: `${d.name} · ${d.reachable ? 'Connected' : 'Offline'}`
             })),
-          (row) => div().child((row as { label: string }).label),
+          (row) => div().child(label(row)),
           (id, cx) => this.select(id, cx)
         )
           .w_full()
@@ -371,17 +389,18 @@ export default class Panel extends View {
       );
   }
 
-  select(id: string, cx: Context): void {
+  private select(id: string, cx: Context): void {
     this.selected = id;
     cx.notify();
     const device = this.device();
-    if (device?.address)
-      this.run('adbStatus', { id: device.id, address: device.address }, cx);
+    if (device?.address) {
+      this.run('adbStatus', { address: device.address, id: device.id }, cx);
+    }
   }
 
-  controls(device: Device, theme: Theme): Element[] {
+  private controls(device: Device, theme: Theme): Element[] {
     const off = !device.reachable;
-    const id = device.id;
+    const { id } = device;
     const actions: [string, string, string][] = [
       ['ring', 'bell-ring', 'Ring'],
       ['ping', 'radio', 'Ping'],
@@ -389,7 +408,7 @@ export default class Panel extends View {
       ['clipboard', 'clipboard', 'Clipboard'],
       ['share', 'share-2', 'Share']
     ];
-    const media = device.media;
+    const { media } = device;
     const noMedia = off || !media;
     const muted = (device.volume ?? 0) <= 0;
     const now = media ? position(media) : 0;
@@ -499,7 +518,7 @@ export default class Panel extends View {
                         .ghost()
                         .disabled(noMedia)
                         .on_click((_e, cx) =>
-                          this.run('media', { id, action: 'Previous' }, cx)
+                          this.run('media', { action: 'Previous', id }, cx)
                         )
                     )
                     .child(
@@ -511,7 +530,7 @@ export default class Panel extends View {
                         .primary()
                         .disabled(noMedia)
                         .on_click((_e, cx) =>
-                          this.run('media', { id, action: 'PlayPause' }, cx)
+                          this.run('media', { action: 'PlayPause', id }, cx)
                         )
                     )
                     .child(
@@ -519,7 +538,7 @@ export default class Panel extends View {
                         .ghost()
                         .disabled(noMedia)
                         .on_click((_e, cx) =>
-                          this.run('media', { id, action: 'Next' }, cx)
+                          this.run('media', { action: 'Next', id }, cx)
                         )
                     )
                 )
@@ -548,14 +567,12 @@ export default class Panel extends View {
     ];
   }
 
-  cast(device: Device, theme: Theme): Element[] {
+  private cast(device: Device, theme: Theme): Element[] {
     const off = !device.reachable;
-    const id = device.id;
-    const state = ((getState('cast') as Record<string, Cast> | null) ?? {})[
-      id
-    ] ?? {
-      serial: null,
-      casting: false
+    const { id } = device;
+    const state = castStates()[id] ?? {
+      casting: false,
+      serial: null
     };
     const connected = state.serial !== null;
     const connection: Element[] = [
@@ -662,13 +679,13 @@ export default class Panel extends View {
                       .loading(this.busy.has('adbConnect'))
                       .on_click((_e, cx) => {
                         const typed = this.connectAddress.value().trim();
-                        // a bare port goes to the phone's address
+                        // A bare port goes to the phone's address
                         const address = /^\d+$/.test(typed)
                           ? `${host}:${typed}`
                           : typed;
                         this.run(
                           'adbConnect',
-                          { id, address },
+                          { address, id },
                           cx,
                           'adbConnect',
                           () => {
@@ -692,9 +709,10 @@ export default class Panel extends View {
           this.preset = index;
           if (index < CUSTOM) {
             const { res, br, fps } = PRESETS[index];
-            this.castOptions = { ...this.castOptions, res, br, fps };
-            for (const q of QUALITY)
+            this.castOptions = { ...this.castOptions, br, fps, res };
+            for (const q of QUALITY) {
               this.quality[q.key].set_value(this.castOptions[q.key] / q.per);
+            }
             store('cast', this.castOptions);
           }
           cx.notify();
@@ -791,14 +809,14 @@ export default class Panel extends View {
             ? this.run('stopCast', { id }, cx)
             : this.run(
                 'cast',
-                { id, serial: state.serial, options: this.castOptions },
+                { id, options: this.castOptions, serial: state.serial },
                 cx
               )
         )
     ];
   }
 
-  messages(device: Device, theme: Theme): Element[] {
+  private messages(device: Device, theme: Theme): Element[] {
     const off = !device.reachable;
     const dest = this.dest.trim();
     const query = dest.toLowerCase();
@@ -811,7 +829,7 @@ export default class Panel extends View {
         f.number.toLowerCase().includes(query) ||
         f.name.toLowerCase().includes(query)
     );
-    // a favorite's name sends to its number
+    // A favorite's name sends to its number
     const number =
       this.favorites.find((f) => f.name && f.name.toLowerCase() === query)
         ?.number ?? dest;
@@ -866,7 +884,7 @@ export default class Panel extends View {
               } else {
                 this.saveFavorites([
                   ...this.favorites,
-                  { number: dest, name: '' }
+                  { name: '', number: dest }
                 ]);
                 this.rename(dest, '');
               }
@@ -1015,7 +1033,7 @@ export default class Panel extends View {
     ];
   }
 
-  devices(snap: Snapshot, theme: Theme): Element[] {
+  private devices(snap: Snapshot, theme: Theme): Element[] {
     const current = this.device();
     const paired = snap.devices.filter((d) => d.paired);
     const nearby = snap.devices.filter(
@@ -1148,18 +1166,18 @@ export default class Panel extends View {
     return parts;
   }
 
-  rename(number: string, name: string): void {
+  private rename(number: string, name: string): void {
     this.editing = number;
     this.nameInput.set_value(name);
   }
 
-  saveFavorites(favorites: Favorite[]): void {
+  private saveFavorites(favorites: Favorite[]): void {
     this.favorites = favorites;
     store('favorites', favorites);
   }
 
   /** A small labelled button that runs service `method` */
-  action(
+  private action(
     id: string,
     label: string,
     method: string,
@@ -1174,20 +1192,23 @@ export default class Panel extends View {
   }
 
   /** Calls the service, which reports the outcome through state `msg`; `done` runs on success */
-  run(
+  public run(
     method: string,
     args: JsonValue,
     cx: Context,
     key = method,
     done?: () => void
   ): void {
-    if (this.busy.has(key)) return;
+    if (this.busy.has(key)) {
+      return;
+    }
     this.busy.add(key);
     cx.notify();
     cx.spawn(async (cx) => {
       const answer = await call(method, args);
-      if (!(answer && typeof answer === 'object' && 'message' in answer))
+      if (!(answer && typeof answer === 'object' && 'message' in answer)) {
         done?.();
+      }
       this.busy.delete(key);
       cx.notify();
     });
@@ -1282,9 +1303,9 @@ function input(
   return new InputGroup(id).input(new InputGroupInput(state).aria_label(label));
 }
 
-/** gpui-component's slider look: a 6 px groove, the primary fill, a ringed 16 px thumb */
+/** Gpui-component's slider look: a 6 px groove, the primary fill, a ringed 16 px thumb */
 function slider(state: SliderState, theme: Theme, disabled: boolean): Element {
-  // px_2 like corona's dashboard sliders: the thumb overhangs the track by half its width
+  // Px_2 like corona's dashboard sliders: the thumb overhangs the track by half its width
   return Slider.new(state)
     .flex_1()
     .px_2()
@@ -1330,7 +1351,7 @@ function headerButton(id: string, icon: string, label: string): ButtonElement {
 }
 
 function iconButton(id: string, icon: string, label: string): ButtonElement {
-  // square, like the design's icon-sm: 28 px without padding
+  // Square, like the design's icon-sm: 28 px without padding
   return new Button(id)
     .cursor_pointer()
     .size('small')
@@ -1366,14 +1387,14 @@ function presetOf(o: CastOptions): number {
   const index = PRESETS.findIndex(
     (p) => p.res === o.res && p.br === o.br && p.fps === o.fps
   );
-  return index < 0 ? CUSTOM : index;
+  return index === -1 ? CUSTOM : index;
 }
 
 /** `localStorage`, which may be off: then nothing is kept */
 function load<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
+    return raw ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
   }

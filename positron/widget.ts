@@ -1,15 +1,14 @@
-import { View, div } from 'gpui-kit';
-import type { Context, Element } from 'gpui-kit';
+import { type Context, type Element, View, div } from 'gpui-kit';
 import { Icon } from 'gpui-component';
 import { call } from 'corona/plugin';
 import { bar } from 'corona/surface';
 
 /** A notes icon that opens and closes positron's notes window. */
 export default class Widget extends View {
-  render(cx: Context): Element {
+  public render(cx: Context): Element {
     const theme = cx.theme();
-    // like corona's own bar buttons: a 16 px icon in a round 24 px button,
-    // secondary, ghost without a pill of its own.
+    // Like corona's own bar buttons: a 16 px icon in a round 24 px button,
+    // Secondary, ghost without a pill of its own.
     // A div: the runtime refuses `rounded_full` on a component Button.
     const button = div()
       .id('positron-notes-toggle')
@@ -19,9 +18,9 @@ export default class Widget extends View {
       .cursor_pointer()
       .tooltip('Notes')
       .hover((el) => el.bg(theme.accent))
-      // positron closes its window on a click outside of it, so this toggles
-      // from the bar, which its backdrop leaves clickable
-      .on_click((_e, cx) => cx.spawn(() => call('toggle')))
+      // Positron closes its window on a click outside of it, so this toggles
+      // From the bar, which its backdrop leaves clickable
+      .on_click((_e, cx) => cx.spawn(async () => call('toggle')))
       .child(
         new Icon('icons/notebook-pen.svg')
           .size('small')
