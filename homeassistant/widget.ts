@@ -11,8 +11,8 @@ export default class Widget extends View {
   render(cx: Context): Element {
     const theme = cx.theme();
     const status = (getState('ha') as Snapshot | null)?.status ?? 'connecting';
-    // like corona's own bar buttons: a 16 px icon in a round 24 px button,
-    // secondary, ghost without a pill of its own, danger when it needs you.
+    // Like corona's own bar buttons: a 16 px icon in a round 24 px button,
+    // Secondary, ghost without a pill of its own, danger when it needs you.
     // A div: the runtime refuses `rounded_full` on a component Button.
     const fill =
       status === 'auth-failed'
@@ -30,7 +30,9 @@ export default class Widget extends View {
       .hover((el) => el.bg(theme.accent))
       .on_click(() => {
         const error = togglePanel('main');
-        if (error) console.error(error.message);
+        if (error) {
+          console.error(error.message);
+        }
       })
       .child(
         new Icon('icons/house.svg')

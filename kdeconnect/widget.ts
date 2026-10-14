@@ -12,8 +12,8 @@ export default class Widget extends View {
     const devices = (getState('kc') as Snapshot | null)?.devices ?? [];
     const connected = devices.find((d) => d.paired && d.reachable);
     const asking = devices.some((d) => d.pairRequestedByPeer);
-    // like corona's own bar buttons: a 16 px icon in a round 24 px button,
-    // secondary, ghost without a pill of its own, danger when it needs you.
+    // Like corona's own bar buttons: a 16 px icon in a round 24 px button,
+    // Secondary, ghost without a pill of its own, danger when it needs you.
     // A div: the runtime refuses `rounded_full` on a component Button.
     const fill = asking
       ? theme.destructive
@@ -37,7 +37,9 @@ export default class Widget extends View {
       .hover((el) => el.bg(theme.accent))
       .on_click(() => {
         const error = togglePanel('main');
-        if (error) console.error(error.message);
+        if (error) {
+          console.error(error.message);
+        }
       })
       .child(
         new Icon('icons/smartphone.svg')

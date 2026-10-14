@@ -39,7 +39,14 @@ const SECTIONS: [string, string[]][] = [
   ['Buttons', ['button', 'input_button']],
   ['Automations', ['automation', 'script']]
 ];
-const TOGGLES = ['light', 'switch', 'input_boolean', 'fan', 'cover', 'lock'];
+const TOGGLES = new Set([
+  'light',
+  'switch',
+  'input_boolean',
+  'fan',
+  'cover',
+  'lock'
+]);
 /** One-shot entities: the button's label, icon and the service it calls in their domain */
 const RUNS: Record<string, [string, string, string]> = {
   script: ['Run', 'play', 'turn_on'],
@@ -120,7 +127,7 @@ export default class Panel extends View {
   render(cx: Context): Element {
     const theme = cx.theme();
     const snap = (getState('ha') as Snapshot | null) ?? {
-      status: 'connecting' as Status,
+      status: 'connecting',
       error: null,
       entities: {}
     };
@@ -264,7 +271,7 @@ export default class Panel extends View {
     const iconColor: Color =
       kind === 'light' && on
         ? AMBER
-        : TOGGLES.includes(kind) && on
+        : TOGGLES.has(kind) && on
           ? theme.foreground
           : theme.muted_foreground;
 
@@ -285,7 +292,7 @@ export default class Panel extends View {
               .child(label(e))
           )
       );
-    if (TOGGLES.includes(kind)) {
+    if (TOGGLES.has(kind)) {
       if (caps && (caps.bri || caps.ct || caps.hue)) {
         main.child(
           iconButton(
@@ -692,14 +699,18 @@ function label(e: Entity): string {
       String(e.attributes.device_class ?? 'sensor').replace(/_/g, ' ')
     );
   if (kind === 'binary_sensor') return 'Binary sensor';
-  if (TOGGLES.includes(kind)) return isOn(e) ? 'On' : 'Off';
+  if (TOGGLES.has(kind)) {
+    return isOn(e) ? 'On' : 'Off';
+  }
   return capital(kind.replace(/_/g, ' '));
 }
 
 /** The value at the right of a sensor-like row */
 function value(e: Entity): string {
   const kind = domain(e.id);
-  if (e.state === 'unavailable' || e.state === 'unknown') return '–';
+  if (e.state === 'unavailable' || e.state === 'unknown') {
+    return '–';
+  }
   if (kind === 'binary_sensor') {
     const [on, off] = BINARY[String(e.attributes.device_class ?? '')] ?? [
       'On',
@@ -742,10 +753,22 @@ function message(snap: Snapshot, theme: Theme): Element {
     Exclude<Status, 'connected'>,
     [string, string, string, boolean]
   > = {
+    'auth-failed': [
+      'key',
+      'Authentication failed',
+      'Create a new long-lived access token in Home Assistant (Profile → Security) and paste it into the plugin settings.',
+      true
+    ],
     connecting: [
       'settings',
       'Connecting to Home Assistant…',
       'Waiting for the live connection to come up.',
+      false
+    ],
+    unconfigured: [
+      'settings',
+      'Set up Home Assistant',
+      'Add your Home Assistant URL and a long-lived access token in the plugin settings.',
       false
     ],
     unreachable: [
@@ -753,18 +776,6 @@ function message(snap: Snapshot, theme: Theme): Element {
       'Home Assistant is unreachable',
       `${snap.error ? `${snap.error}. ` : ''}Check the URL in the plugin settings and that the server is online. Retrying automatically.`,
       true
-    ],
-    'auth-failed': [
-      'key',
-      'Authentication failed',
-      'Create a new long-lived access token in Home Assistant (Profile → Security) and paste it into the plugin settings.',
-      true
-    ],
-    unconfigured: [
-      'settings',
-      'Set up Home Assistant',
-      'Add your Home Assistant URL and a long-lived access token in the plugin settings.',
-      false
     ]
   };
   const [iconName, title, body, bad] =
@@ -849,9 +860,9 @@ function tile(theme: Theme, path: string, color: Color): Element {
     .child(new Icon(path).size('small').text_color(color));
 }
 
-/** gpui-component's slider look: a 6 px groove, the primary fill, a ringed 16 px thumb */
+/** Gpui-component's slider look: a 6 px groove, the primary fill, a ringed 16 px thumb */
 function slider(state: SliderState, theme: Theme): Element {
-  // px_2 like corona's dashboard sliders: the thumb overhangs the track by half its width
+  // Px_2 like corona's dashboard sliders: the thumb overhangs the track by half its width
   return Slider.new(state)
     .flex_1()
     .px_2()
@@ -896,7 +907,7 @@ function headerButton(id: string, icon: string, label: string): ButtonElement {
 }
 
 function iconButton(id: string, icon: string, label: string): ButtonElement {
-  // square, like the design's icon-sm: 28 px without padding
+  // Square, like the design's icon-sm: 28 px without padding
   return new Button(id)
     .cursor_pointer()
     .size('small')

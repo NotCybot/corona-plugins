@@ -29,49 +29,49 @@ const TABS = ['Devices', 'Taildrop', 'Preferences'];
 
 const PREFS: { key: PrefKey; label: string; desc: string }[] = [
   {
+    desc: 'Block all incoming connections.',
     key: 'shields',
-    label: 'Shields up',
-    desc: 'Block all incoming connections.'
+    label: 'Shields up'
   },
   {
+    desc: 'Use routes advertised by other devices.',
     key: 'routes',
-    label: 'Accept subnet routes',
-    desc: 'Use routes advertised by other devices.'
+    label: 'Accept subnet routes'
   },
   {
+    desc: 'Let tailnet devices SSH into this one.',
     key: 'ssh',
-    label: 'Tailscale SSH server',
-    desc: 'Let tailnet devices SSH into this one.'
+    label: 'Tailscale SSH server'
   },
   {
+    desc: 'Let other devices route traffic through this one.',
     key: 'advertise',
-    label: 'Advertise as exit node',
-    desc: 'Let other devices route traffic through this one.'
+    label: 'Advertise as exit node'
   },
   {
+    desc: 'Reach local devices while using an exit node.',
     key: 'lan',
-    label: 'Allow LAN access',
-    desc: 'Reach local devices while using an exit node.'
+    label: 'Allow LAN access'
   }
 ];
 
 const OS_ICON: Record<string, string> = {
-  macOS: 'icons/laptop.svg',
   android: 'icons/smartphone.svg',
-  iOS: 'icons/smartphone.svg'
+  iOS: 'icons/smartphone.svg',
+  macOS: 'icons/laptop.svg'
 };
 
 /** A key expiring within this is warned about */
 const EXPIRY_WARNING_MS = 7 * 24 * 3600 * 1000;
 
-type Row = {
+interface Row {
   icon?: string;
   title: string | Element;
   desc?: string;
   actions?: Element[];
   footer?: Element;
   variant?: 'muted' | 'outline';
-};
+}
 
 /** Tailscale's state from the service, and its actions as service calls. */
 export default class Panel extends View {
@@ -93,8 +93,8 @@ export default class Panel extends View {
     this.sendTo = null;
     this.busy = new Set();
     this.search = InputState('Name, IP or OS');
-    // the bus keeps the state current; this catches up on what it rate-limited away
-    cx.spawn(() => call('refresh'));
+    // The bus keeps the state current; this catches up on what it rate-limited away
+    cx.spawn(async () => call('refresh'));
   }
 
   render(cx: Context): Element {
@@ -128,8 +128,6 @@ export default class Panel extends View {
     if (conn === 'unavailable') {
       root.child(
         row(theme, {
-          title: 'Tailscale is not reachable',
-          desc: ts?.error ?? undefined,
           actions: [
             this.action(
               'ts-retry',
@@ -139,28 +137,30 @@ export default class Panel extends View {
               'refresh'
             ).primary()
           ],
+          desc: ts?.error ?? undefined,
+          title: 'Tailscale is not reachable',
           variant: 'outline'
         })
       );
     } else if (conn === 'needs-login') {
       root.child(
         row(theme, {
-          title: 'Log in to Tailscale',
-          desc: 'Authenticate this device to join your tailnet.',
           actions: [this.action('ts-login', 'Log in', 'login', null).primary()],
+          desc: 'Authenticate this device to join your tailnet.',
+          title: 'Log in to Tailscale',
           variant: 'outline'
         })
       );
     } else if (conn === 'stopped') {
       root.child(
         row(theme, {
-          title: 'Tailscale is stopped',
-          desc: 'Start it to reach the devices on your tailnet.',
           actions: [
             this.action('ts-start', 'Start', 'setRunning', {
               on: true
             }).primary()
           ],
+          desc: 'Start it to reach the devices on your tailnet.',
+          title: 'Tailscale is stopped',
           variant: 'outline'
         })
       );
@@ -243,7 +243,7 @@ export default class Panel extends View {
   connected(ts: Snapshot, theme: Theme): Element[] {
     const parts: Element[] = [];
     if (ts.self) {
-      const self = ts.self;
+      const { self } = ts;
       parts.push(
         div()
           .flex_none()
@@ -251,9 +251,6 @@ export default class Panel extends View {
           .bg(tint(theme.primary, 0.18))
           .child(
             row(theme, {
-              icon: 'icons/house.svg',
-              title: self.name,
-              desc: `${self.ip} · This device`,
               actions: [
                 iconButton('ts-self-ip', 'icons/copy.svg', 'Copy IP')
                   .ghost()
@@ -263,7 +260,10 @@ export default class Panel extends View {
                 iconButton('ts-self-name', 'icons/tag.svg', 'Copy name')
                   .ghost()
                   .on_click((_e, cx) => this.copy(self.name, self.name, cx))
-              ]
+              ],
+              desc: `${self.ip} · This device`,
+              icon: 'icons/house.svg',
+              title: self.name
             })
           )
       );
@@ -275,13 +275,13 @@ export default class Panel extends View {
     if (ts.exitNode) {
       parts.push(
         row(theme, {
-          icon: 'icons/globe.svg',
-          title: `Exit node: ${exit?.name ?? ts.exitNode}`,
           actions: [
             this.action('ts-exit-off', 'Disable', 'setExit', {
               id: null
             }).outline()
           ],
+          icon: 'icons/globe.svg',
+          title: `Exit node: ${exit?.name ?? ts.exitNode}`,
           variant: 'outline'
         })
       );
@@ -300,8 +300,9 @@ export default class Panel extends View {
         .children(TABS.map((label) => new Tab().cursor_pointer().label(label)))
     );
 
-    if (this.tab === 0) parts.push(...this.devices(ts, theme));
-    else
+    if (this.tab === 0) {
+      parts.push(...this.devices(ts, theme));
+    } else {
       parts.push(
         v_flex()
           .id('ts-tab')
@@ -315,6 +316,7 @@ export default class Panel extends View {
               : this.preferences(ts, theme)
           )
       );
+    }
     return parts;
   }
 
@@ -436,17 +438,17 @@ export default class Panel extends View {
       .opacity(peer.online ? 1 : 0.6)
       .child(
         row(theme, {
+          actions,
+          desc:
+            peer.online || !peer.lastSeen
+              ? peer.ip
+              : `${peer.ip} · last seen ${seen(peer.lastSeen)}`,
           icon: OS_ICON[peer.os] ?? 'icons/monitor.svg',
           title: h_flex()
             .items_center()
             .gap_1p5()
             .child(dot(peer.online ? ONLINE : tint(theme.foreground, 0.3)))
             .child(div().truncate().child(peer.name)),
-          desc:
-            peer.online || !peer.lastSeen
-              ? peer.ip
-              : `${peer.ip} · last seen ${seen(peer.lastSeen)}`,
-          actions,
           variant: 'muted'
         })
       );
@@ -515,7 +517,7 @@ export default class Panel extends View {
               }
             )
           )
-          // ponytail: no portable "open a terminal"; copies the command instead
+          // Ponytail: no portable "open a terminal"; copies the command instead
           .child(
             menuItem(
               theme,
@@ -557,19 +559,17 @@ export default class Panel extends View {
     const recent = (getState('recent') as Recent[] | null) ?? [];
     return [
       row(theme, {
-        icon: 'icons/download.svg',
-        title: 'Receive files',
-        desc:
-          waiting +
-          (folder ? `Saved to ${folder}` : 'Asks for a folder the first time'),
         actions: [
           this.action('ts-receive', 'Receive', 'receive', null).outline()
         ],
+        desc:
+          waiting +
+          (folder ? `Saved to ${folder}` : 'Asks for a folder the first time'),
+        icon: 'icons/download.svg',
+        title: 'Receive files',
         variant: 'muted'
       }),
       row(theme, {
-        icon: 'icons/upload.svg',
-        title: 'Send a file',
         desc: 'Pick an online device, then choose a file.',
         footer: h_flex()
           .items_center()
@@ -598,14 +598,16 @@ export default class Panel extends View {
                 this.run('send', { ip: target.ip, name: target.name }, cx)
               )
           ),
+        icon: 'icons/upload.svg',
+        title: 'Send a file',
         variant: 'muted'
       }),
       div().flex_none().pt_1().px_0p5().text_sm().font_medium().child('Recent'),
       ...(recent.length
         ? recent.map((entry) =>
             row(theme, {
-              title: entry.file,
               desc: entry.meta,
+              title: entry.file,
               variant: 'outline'
             })
           )
@@ -622,8 +624,6 @@ export default class Panel extends View {
   preferences(ts: Snapshot, theme: Theme): Element[] {
     return PREFS.map((pref) =>
       row(theme, {
-        title: pref.label,
-        desc: pref.desc,
         actions: [
           new Switch(`ts-pref-${pref.key}`)
             .size('small')
@@ -639,6 +639,8 @@ export default class Panel extends View {
               )
             )
         ],
+        desc: pref.desc,
+        title: pref.label,
         variant: 'muted'
       })
     );
@@ -662,7 +664,9 @@ export default class Panel extends View {
 
   /** Calls the service; it reports the outcome through state `msg` */
   run(method: string, args: JsonValue, cx: Context, key = method): void {
-    if (this.busy.has(key)) return;
+    if (this.busy.has(key)) {
+      return;
+    }
     this.busy.add(key);
     cx.notify();
     cx.spawn(async (cx) => {
@@ -694,13 +698,17 @@ function row(
   { icon, title, desc, actions, footer, variant }: Row
 ): Element {
   const item = v_flex().flex_none().gap_2().p_2().rounded_xl();
-  // corona's `card()`: accent fill, border
-  if (variant === 'muted')
+  // Corona's `card()`: accent fill, border
+  if (variant === 'muted') {
     item.bg(theme.accent).border_1().border_color(theme.border);
-  if (variant === 'outline') item.border_1().border_color(theme.border);
+  }
+  if (variant === 'outline') {
+    item.border_1().border_color(theme.border);
+  }
   const main = h_flex().items_center().gap_2();
-  if (icon)
+  if (icon) {
     main.child(new Icon(icon).size('small').text_color(theme.muted_foreground));
+  }
   main.child(
     v_flex()
       .flex_1()
@@ -716,15 +724,18 @@ function row(
           : div()
       )
   );
-  if (actions?.length)
+  if (actions?.length) {
     main.child(h_flex().flex_none().items_center().gap_1().children(actions));
+  }
   item.child(main);
-  if (footer) item.child(footer);
+  if (footer) {
+    item.child(footer);
+  }
   return item;
 }
 
 function iconButton(id: string, icon: string, label: string): ButtonElement {
-  // square, like the design's icon-sm: 28 px without padding
+  // Square, like the design's icon-sm: 28 px without padding
   return new Button(id)
     .cursor_pointer()
     .size('small')
@@ -763,7 +774,9 @@ function menuItem(
     .text_sm()
     .child(new Icon(icon).size('small'))
     .child(label);
-  if (disabled) return item.opacity(0.5);
+  if (disabled) {
+    return item.opacity(0.5);
+  }
   return item
     .cursor_pointer()
     .hover((el) => el.bg(theme.accent).text_color(theme.accent_foreground))

@@ -34,9 +34,9 @@ import { DEVICE_ICON, ONLINE, dot, tint } from './ui.ts';
 const TABS = ['Controls', 'Cast', 'Messages', 'Devices'];
 
 const PRESETS: { label: string; res: number; br: number; fps: number }[] = [
-  { label: 'HD', res: 1920, br: 16, fps: 60 },
-  { label: 'Balanced', res: 1280, br: 8, fps: 60 },
-  { label: 'Saver', res: 1024, br: 4, fps: 30 }
+  { br: 16, fps: 60, label: 'HD', res: 1920 },
+  { br: 8, fps: 60, label: 'Balanced', res: 1280 },
+  { br: 4, fps: 30, label: 'Saver', res: 1024 }
 ];
 const CUSTOM = PRESETS.length;
 
@@ -47,15 +47,18 @@ const CUSTOM = PRESETS.length;
  * `min` above it panics the whole shell.
  */
 const QUALITY = [
-  { key: 'res', short: 'RES', min: 4, max: 60, per: 64, unit: 'p' },
-  { key: 'br', short: 'BIT', min: 1, max: 30, per: 1, unit: ' Mbps' },
-  { key: 'fps', short: 'FPS', min: 1, max: 240, per: 1, unit: ' fps' }
+  { key: 'res', max: 60, min: 4, per: 64, short: 'RES', unit: 'p' },
+  { key: 'br', max: 30, min: 1, per: 1, short: 'BIT', unit: ' Mbps' },
+  { key: 'fps', max: 240, min: 1, per: 1, short: 'FPS', unit: ' fps' }
 ] as const;
 
 /** Seek runs in thousandths of the track, since a slider's range is fixed when it is made */
 const SEEK_STEPS = 1000;
 
-type Favorite = { number: string; name: string };
+interface Favorite {
+  number: string;
+  name: string;
+}
 
 /** KDE Connect's devices from the service, and their actions as service calls. */
 export default class Panel extends View {
@@ -110,24 +113,27 @@ export default class Panel extends View {
     this.connectAddress = InputState('address:port');
     this.dragging = null;
 
-    this.volume = this.slider({ min: 0, max: 100 }, (value) => {
+    this.volume = this.slider({ max: 100, min: 0 }, (value) => {
       const device = this.device();
-      if (device) this.run('volume', { id: device.id, value }, cx);
+      if (device) {
+        this.run('volume', { id: device.id, value }, cx);
+      }
     });
-    this.seek = this.slider({ min: 0, max: SEEK_STEPS }, (value) => {
+    this.seek = this.slider({ max: SEEK_STEPS, min: 0 }, (value) => {
       const media = this.device()?.media;
-      if (media)
+      if (media) {
         this.run(
           'seek',
           { id: this.device().id, ms: (value / SEEK_STEPS) * media.length },
           cx
         );
+      }
     });
     this.quality = Object.fromEntries(
       QUALITY.map((q) => [
         q.key,
         this.slider(
-          { min: q.min, max: q.max, value: this.castOptions[q.key] / q.per },
+          { max: q.max, min: q.min, value: this.castOptions[q.key] / q.per },
           () => store('cast', this.castOptions),
           (value, cx) => {
             this.castOptions = { ...this.castOptions, [q.key]: value * q.per };
@@ -138,18 +144,21 @@ export default class Panel extends View {
     ) as Panel['quality'];
 
     cx.spawn(async (cx) => {
-      // the signals keep the state current; this catches up on whatever was missed while closed
+      // The signals keep the state current; this catches up on whatever was missed while closed
       await call('refresh');
       const device = this.device();
-      if (device?.address)
+      if (device?.address) {
         await call('adbStatus', { id: device.id, address: device.address });
+      }
       cx.notify();
     });
-    // ponytail: KDE Connect reports the position only when it changes; while
-    // playing, the seek bar moves on locally, once a second, and only then
+    // Ponytail: KDE Connect reports the position only when it changes; while
+    // Playing, the seek bar moves on locally, once a second, and only then
     cx.timer.every(1000, (cx) => {
       const media = this.device()?.media;
-      if (!media?.playing || this.dragging === this.seek) return;
+      if (!media?.playing || this.dragging === this.seek) {
+        return;
+      }
       this.seek.set_value(
         Math.round((position(media) / Math.max(media.length, 1)) * SEEK_STEPS)
       );
@@ -263,12 +272,14 @@ export default class Panel extends View {
     ) {
       this.volume.set_value(device.volume);
     }
-    const media = device.media;
+    const { media } = device;
     if (this.dragging !== this.seek) {
       const value = media
         ? Math.round((position(media) / Math.max(media.length, 1)) * SEEK_STEPS)
         : 0;
-      if (single(this.seek.value()) !== value) this.seek.set_value(value);
+      if (single(this.seek.value()) !== value) {
+        this.seek.set_value(value);
+      }
     }
   }
 
@@ -328,19 +339,21 @@ export default class Panel extends View {
           .child(`${charge}%`)
       );
     }
-    if (device.network)
+    if (device.network) {
       info.push(
         div().child(
           `${device.network.type} ${Math.max(0, device.network.strength)}/4`
         )
       );
-    if (device.reachable && device.address)
+    }
+    if (device.reachable && device.address) {
       info.push(div().font_family(theme.typography.mono).child(device.address));
+    }
     return v_flex()
       .flex_none()
       .gap_2()
       .child(
-        // keyed by the device: a Select keeps its own choice, so a new one shows the current device
+        // Keyed by the device: a Select keeps its own choice, so a new one shows the current device
         new Select(
           `kc-device-${device.id}`,
           () =>
@@ -375,13 +388,14 @@ export default class Panel extends View {
     this.selected = id;
     cx.notify();
     const device = this.device();
-    if (device?.address)
+    if (device?.address) {
       this.run('adbStatus', { id: device.id, address: device.address }, cx);
+    }
   }
 
   controls(device: Device, theme: Theme): Element[] {
     const off = !device.reachable;
-    const id = device.id;
+    const { id } = device;
     const actions: [string, string, string][] = [
       ['ring', 'bell-ring', 'Ring'],
       ['ping', 'radio', 'Ping'],
@@ -389,7 +403,7 @@ export default class Panel extends View {
       ['clipboard', 'clipboard', 'Clipboard'],
       ['share', 'share-2', 'Share']
     ];
-    const media = device.media;
+    const { media } = device;
     const noMedia = off || !media;
     const muted = (device.volume ?? 0) <= 0;
     const now = media ? position(media) : 0;
@@ -499,7 +513,7 @@ export default class Panel extends View {
                         .ghost()
                         .disabled(noMedia)
                         .on_click((_e, cx) =>
-                          this.run('media', { id, action: 'Previous' }, cx)
+                          this.run('media', { action: 'Previous', id }, cx)
                         )
                     )
                     .child(
@@ -511,7 +525,7 @@ export default class Panel extends View {
                         .primary()
                         .disabled(noMedia)
                         .on_click((_e, cx) =>
-                          this.run('media', { id, action: 'PlayPause' }, cx)
+                          this.run('media', { action: 'PlayPause', id }, cx)
                         )
                     )
                     .child(
@@ -519,7 +533,7 @@ export default class Panel extends View {
                         .ghost()
                         .disabled(noMedia)
                         .on_click((_e, cx) =>
-                          this.run('media', { id, action: 'Next' }, cx)
+                          this.run('media', { action: 'Next', id }, cx)
                         )
                     )
                 )
@@ -550,12 +564,12 @@ export default class Panel extends View {
 
   cast(device: Device, theme: Theme): Element[] {
     const off = !device.reachable;
-    const id = device.id;
+    const { id } = device;
     const state = ((getState('cast') as Record<string, Cast> | null) ?? {})[
       id
     ] ?? {
-      serial: null,
-      casting: false
+      casting: false,
+      serial: null
     };
     const connected = state.serial !== null;
     const connection: Element[] = [
@@ -662,13 +676,13 @@ export default class Panel extends View {
                       .loading(this.busy.has('adbConnect'))
                       .on_click((_e, cx) => {
                         const typed = this.connectAddress.value().trim();
-                        // a bare port goes to the phone's address
+                        // A bare port goes to the phone's address
                         const address = /^\d+$/.test(typed)
                           ? `${host}:${typed}`
                           : typed;
                         this.run(
                           'adbConnect',
-                          { id, address },
+                          { address, id },
                           cx,
                           'adbConnect',
                           () => {
@@ -692,9 +706,10 @@ export default class Panel extends View {
           this.preset = index;
           if (index < CUSTOM) {
             const { res, br, fps } = PRESETS[index];
-            this.castOptions = { ...this.castOptions, res, br, fps };
-            for (const q of QUALITY)
+            this.castOptions = { ...this.castOptions, br, fps, res };
+            for (const q of QUALITY) {
               this.quality[q.key].set_value(this.castOptions[q.key] / q.per);
+            }
             store('cast', this.castOptions);
           }
           cx.notify();
@@ -791,7 +806,7 @@ export default class Panel extends View {
             ? this.run('stopCast', { id }, cx)
             : this.run(
                 'cast',
-                { id, serial: state.serial, options: this.castOptions },
+                { id, options: this.castOptions, serial: state.serial },
                 cx
               )
         )
@@ -811,7 +826,7 @@ export default class Panel extends View {
         f.number.toLowerCase().includes(query) ||
         f.name.toLowerCase().includes(query)
     );
-    // a favorite's name sends to its number
+    // A favorite's name sends to its number
     const number =
       this.favorites.find((f) => f.name && f.name.toLowerCase() === query)
         ?.number ?? dest;
@@ -866,7 +881,7 @@ export default class Panel extends View {
               } else {
                 this.saveFavorites([
                   ...this.favorites,
-                  { number: dest, name: '' }
+                  { name: '', number: dest }
                 ]);
                 this.rename(dest, '');
               }
@@ -1181,13 +1196,16 @@ export default class Panel extends View {
     key = method,
     done?: () => void
   ): void {
-    if (this.busy.has(key)) return;
+    if (this.busy.has(key)) {
+      return;
+    }
     this.busy.add(key);
     cx.notify();
     cx.spawn(async (cx) => {
       const answer = await call(method, args);
-      if (!(answer && typeof answer === 'object' && 'message' in answer))
+      if (!(answer && typeof answer === 'object' && 'message' in answer)) {
         done?.();
+      }
       this.busy.delete(key);
       cx.notify();
     });
@@ -1282,9 +1300,9 @@ function input(
   return new InputGroup(id).input(new InputGroupInput(state).aria_label(label));
 }
 
-/** gpui-component's slider look: a 6 px groove, the primary fill, a ringed 16 px thumb */
+/** Gpui-component's slider look: a 6 px groove, the primary fill, a ringed 16 px thumb */
 function slider(state: SliderState, theme: Theme, disabled: boolean): Element {
-  // px_2 like corona's dashboard sliders: the thumb overhangs the track by half its width
+  // Px_2 like corona's dashboard sliders: the thumb overhangs the track by half its width
   return Slider.new(state)
     .flex_1()
     .px_2()
@@ -1330,7 +1348,7 @@ function headerButton(id: string, icon: string, label: string): ButtonElement {
 }
 
 function iconButton(id: string, icon: string, label: string): ButtonElement {
-  // square, like the design's icon-sm: 28 px without padding
+  // Square, like the design's icon-sm: 28 px without padding
   return new Button(id)
     .cursor_pointer()
     .size('small')
@@ -1366,7 +1384,7 @@ function presetOf(o: CastOptions): number {
   const index = PRESETS.findIndex(
     (p) => p.res === o.res && p.br === o.br && p.fps === o.fps
   );
-  return index < 0 ? CUSTOM : index;
+  return index === -1 ? CUSTOM : index;
 }
 
 /** `localStorage`, which may be off: then nothing is kept */

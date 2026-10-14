@@ -35,9 +35,9 @@ export function tint(color: Color, alpha: number): Color {
 }
 
 export const CONN_TEXT: Record<Conn, string> = {
-  running: 'Connected',
-  stopped: 'Stopped',
   'needs-login': 'Needs login',
+  running: 'Connected',
   starting: 'Starting…',
+  stopped: 'Stopped',
   unavailable: 'Not running'
 };

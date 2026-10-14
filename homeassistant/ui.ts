@@ -7,11 +7,11 @@ export const AMBER: Color = '#e8b04b';
 
 /** Each status as text and dot; null for the dimmed foreground */
 export const STATUS: Record<Status, [string, Color | null]> = {
+  'auth-failed': ['Authentication failed', '#ff6467'],
   connected: ['Connected', ONLINE],
   connecting: ['Connecting…', AMBER],
-  unreachable: ['Unreachable', '#ff6467'],
-  'auth-failed': ['Authentication failed', '#ff6467'],
-  unconfigured: ['Not configured', null]
+  unconfigured: ['Not configured', null],
+  unreachable: ['Unreachable', '#ff6467']
 };
 
 export function dot(color: Color) {

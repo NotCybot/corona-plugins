@@ -1,6 +1,6 @@
-import { nextCall, reply, fail, setState } from 'corona/plugin';
+import { fail, nextCall, reply, setState } from 'corona/plugin';
 import type { Call, JsonValue } from 'corona/plugin';
-import { get, set, nextChange } from 'corona/settings';
+import { get, nextChange, set } from 'corona/settings';
 import * as secrets from 'corona/secrets';
 import { WebSocket } from 'websocket';
 import type { WebSocketSocket } from 'websocket';
@@ -12,31 +12,39 @@ export type Status =
   | 'unreachable'
   | 'auth-failed'
   | 'connected';
-export type Entity = {
+export interface Entity {
   id: string;
   state: string;
   attributes: { [key: string]: JsonValue };
-};
+}
 /** What the views read from state `ha` */
-export type Snapshot = {
+export interface Snapshot {
   status: Status;
   error: string | null;
   /** The monitored entities by id, as far as Home Assistant reported them */
   entities: { [id: string]: Entity };
-};
+}
 /** An entity in the Manage entities list */
-export type Listed = { id: string; name: string };
+export interface Listed {
+  id: string;
+  name: string;
+}
 
-type Args = { [key: string]: JsonValue };
-type Message = {
+interface Args {
+  [key: string]: JsonValue;
+}
+interface Message {
   id?: number;
   type: string;
   [key: string]: JsonValue | undefined;
-};
-/** subscribe_entities' compressed state: `s` state, `a` attributes */
-type Compressed = { s?: string; a?: { [key: string]: JsonValue } };
+}
+/** Subscribe_entities' compressed state: `s` state, `a` attributes */
+interface Compressed {
+  s?: string;
+  a?: { [key: string]: JsonValue };
+}
 
-let snapshot: Snapshot = { status: 'connecting', error: null, entities: {} };
+let snapshot: Snapshot = { entities: {}, error: null, status: 'connecting' };
 let session: Session | null = null;
 
 function publish(patch: Partial<Snapshot>): void {
@@ -46,16 +54,6 @@ function publish(patch: Partial<Snapshot>): void {
 
 /** Each answers with the line the panel shows, or a value */
 const methods: Record<string, (args: Args) => Promise<JsonValue>> = {
-  call: async ({ domain, service, entity, data }) => {
-    await live().request({
-      type: 'call_service',
-      domain,
-      service,
-      target: { entity_id: entity },
-      service_data: data ?? {}
-    });
-    return null;
-  },
   /** Every entity, for Manage entities: one `get_states`, not kept */
   browse: async () => {
     const states = (await live().request({ type: 'get_states' })) as Entity[] &
@@ -73,6 +71,16 @@ const methods: Record<string, (args: Args) => Promise<JsonValue>> = {
       })
       .sort((a, b) => a.id.localeCompare(b.id));
   },
+  call: async ({ domain, service, entity, data }) => {
+    await live().request({
+      type: 'call_service',
+      domain,
+      service,
+      target: { entity_id: entity },
+      service_data: data ?? {}
+    });
+    return null;
+  },
   pin: async ({ id, on }) => {
     const pinned = get('entities').filter((x) => x !== id);
     const error = set('entities', on ? [...pinned, String(id)] : pinned);
@@ -86,7 +94,9 @@ export default async function main(cx: AsyncContext): Promise<void> {
   void follow();
   while (true) {
     const call = await nextCall();
-    if ('message' in call) break; // the service is stopping
+    if ('message' in call) {
+      break;
+    } // The service is stopping
     void answer(call);
   }
 }
@@ -106,13 +116,15 @@ async function answer({ id, method, args }: Call): Promise<void> {
 }
 
 function live(): Session {
-  if (!session) throw new Error('not connected to Home Assistant');
+  if (!session) {
+    throw new Error('not connected to Home Assistant');
+  }
   return session;
 }
 
 /** Resolves on the next change to the URL or token; `connect` waits on it instead of retrying blindly */
 let credentialsChanged: () => void = () => {};
-function nextCredentials(): Promise<void> {
+async function nextCredentials(): Promise<void> {
   return new Promise((resolve) => (credentialsChanged = resolve));
 }
 
@@ -120,13 +132,15 @@ function nextCredentials(): Promise<void> {
 async function follow(): Promise<void> {
   while (true) {
     const change = await nextChange();
-    if ('message' in change) return; // the service is stopping
+    if ('message' in change) {
+      return;
+    } // The service is stopping
     if (change.key === 'url' || change.key === 'token') {
       session?.close();
       credentialsChanged();
     } else if (change.key === 'entities' && 'value' in change) {
       void session
-        ?.subscribe(change.value as string[])
+        ?.subscribe(change.value)
         .catch((error) => console.warn(`homeassistant: ${message(error)}`));
     }
   }
@@ -144,11 +158,11 @@ async function connect(cx: AsyncContext): Promise<void> {
     const url = get('url').trim().replace(/\/+$/, '');
     const token = await secrets.get('token');
     if (!url || !token || typeof token !== 'string') {
-      publish({ status: 'unconfigured', error: null, entities: {} });
+      publish({ entities: {}, error: null, status: 'unconfigured' });
       await changed;
       continue;
     }
-    publish({ status: 'connecting', error: null });
+    publish({ error: null, status: 'connecting' });
     let retry = true;
     try {
       const socket = await WebSocket.connect(
@@ -156,21 +170,22 @@ async function connect(cx: AsyncContext): Promise<void> {
       );
       if (!(await authenticate(socket, token))) {
         void socket.close().catch(() => {});
-        publish({ status: 'auth-failed', error: null, entities: {} });
+        publish({ entities: {}, error: null, status: 'auth-failed' });
         retry = false;
       } else {
         delay = 2000;
         session = new Session(socket);
-        publish({ status: 'connected', error: null });
+        publish({ error: null, status: 'connected' });
         await session.run(get('entities'));
       }
     } catch (error) {
-      publish({ status: 'unreachable', error: message(error) });
+      publish({ error: message(error), status: 'unreachable' });
     }
     session = null;
     if (retry) {
-      if (snapshot.status === 'connected')
+      if (snapshot.status === 'connected') {
         publish({ status: 'unreachable', error: 'the connection closed' });
+      }
       await Promise.race([changed, cx.sleep(delay)]);
       delay = Math.min(delay * 2, 120_000);
     } else {
@@ -185,9 +200,10 @@ async function authenticate(
   token: string
 ): Promise<boolean> {
   const hello = JSON.parse(String(await socket.read())) as Message;
-  if (hello.type !== 'auth_required')
+  if (hello.type !== 'auth_required') {
     throw new Error(`unexpected ${hello.type} from Home Assistant`);
-  await socket.write(JSON.stringify({ type: 'auth', access_token: token }));
+  }
+  await socket.write(JSON.stringify({ access_token: token, type: 'auth' }));
   const answer = JSON.parse(String(await socket.read())) as Message;
   return answer.type === 'auth_ok';
 }
@@ -216,11 +232,13 @@ class Session {
       setState('msg', `✗ ${message(error)}`)
     );
     try {
-      while (true)
+      while (true) {
         this.receive(JSON.parse(String(await this.socket.read())) as Message);
+      }
     } finally {
-      for (const { reject } of this.pending.values())
+      for (const { reject } of this.pending.values()) {
         reject(new Error('the connection to Home Assistant closed'));
+      }
       this.pending.clear();
     }
   }
@@ -229,9 +247,12 @@ class Session {
     if (msg.type === 'result') {
       const waiter = this.pending.get(msg.id);
       this.pending.delete(msg.id);
-      if (!waiter) return;
-      if (msg.success) waiter.resolve((msg.result as JsonValue) ?? null);
-      else
+      if (!waiter) {
+        return;
+      }
+      if (msg.success) {
+        waiter.resolve(msg.result ?? null);
+      } else {
         waiter.reject(
           new Error(
             String(
@@ -239,21 +260,25 @@ class Session {
             )
           )
         );
+      }
     } else if (msg.type === 'event' && msg.id === this.subscription) {
       apply(
         msg.event as {
-          a?: { [id: string]: Compressed };
-          c?: { [id: string]: { '+'?: Compressed; '-'?: { a?: string[] } } };
+          a?: Record<string, Compressed>;
+          c?: Record<string, { '+'?: Compressed; '-'?: { a?: string[] } }>;
           r?: string[];
         }
       );
     }
   }
 
-  request(msg: { type: string; [key: string]: JsonValue }): Promise<JsonValue> {
+  async request(msg: {
+    type: string;
+    [key: string]: JsonValue;
+  }): Promise<JsonValue> {
     const id = this.next++;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { reject, resolve });
       this.socket
         .write(JSON.stringify({ ...msg, id }))
         .catch((error: unknown): void => {
@@ -269,15 +294,17 @@ class Session {
       const old = this.subscription;
       this.subscription = null;
       await this.request({
-        type: 'unsubscribe_events',
-        subscription: old
+        subscription: old,
+        type: 'unsubscribe_events'
       }).catch((): null => null);
     }
     publish({ entities: {} });
-    if (pinned.length === 0) return;
-    // the id is known before the answer, so no event slips past
+    if (pinned.length === 0) {
+      return;
+    }
+    // The id is known before the answer, so no event slips past
     this.subscription = this.next;
-    await this.request({ type: 'subscribe_entities', entity_ids: pinned });
+    await this.request({ entity_ids: pinned, type: 'subscribe_entities' });
   }
 
   close(): void {
@@ -287,21 +314,25 @@ class Session {
 
 /** Applies a subscribe_entities event: `a` added, `c` changed (`+` set, `-` removed attributes), `r` removed */
 function apply(event: {
-  a?: { [id: string]: Compressed };
-  c?: { [id: string]: { '+'?: Compressed; '-'?: { a?: string[] } } };
+  a?: Record<string, Compressed>;
+  c?: Record<string, { '+'?: Compressed; '-'?: { a?: string[] } }>;
   r?: string[];
 }): void {
   const entities = { ...snapshot.entities };
   for (const [id, e] of Object.entries(event.a ?? {})) {
-    entities[id] = { id, state: e.s ?? 'unknown', attributes: e.a ?? {} };
+    entities[id] = { attributes: e.a ?? {}, id, state: e.s ?? 'unknown' };
   }
   for (const [id, diff] of Object.entries(event.c ?? {})) {
-    const now = entities[id] ?? { id, state: 'unknown', attributes: {} };
+    const now = entities[id] ?? { attributes: {}, id, state: 'unknown' };
     const attributes = { ...now.attributes, ...diff['+']?.a };
-    for (const key of diff['-']?.a ?? []) delete attributes[key];
-    entities[id] = { id, state: diff['+']?.s ?? now.state, attributes };
+    for (const key of diff['-']?.a ?? []) {
+      delete attributes[key];
+    }
+    entities[id] = { attributes, id, state: diff['+']?.s ?? now.state };
   }
-  for (const id of event.r ?? []) delete entities[id];
+  for (const id of event.r ?? []) {
+    delete entities[id];
+  }
   publish({ entities });
 }
 

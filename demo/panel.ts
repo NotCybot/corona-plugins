@@ -3,7 +3,7 @@ import type { AsyncContext, Context, Element } from 'gpui-kit';
 import type { Props } from 'gpui-shell';
 import { h_flex, v_flex } from 'gpui-base';
 import { Button } from 'gpui-component';
-import { readFile } from 'fs/promises';
+import { readFile } from 'node:fs/promises';
 import { call, getState } from 'corona/plugin';
 import { language, t } from 'corona/i18n';
 import { all } from 'corona/settings';
@@ -31,12 +31,12 @@ const METHODS = [
   'oauth'
 ];
 
-type Spawned = {
+interface Spawned {
   pid: number;
   lines: string[];
   exit: number | string | null;
   stderr: string | null;
-};
+}
 
 /** A dashboard of every API: service calls, shared state, desktop, images, clipboard. */
 export default class Panel extends View {
@@ -74,7 +74,7 @@ export default class Panel extends View {
         h_flex()
           .gap_2()
           .items_center()
-          // plugin-relative path, and the same file as raster bytes
+          // Plugin-relative path, and the same file as raster bytes
           .child(image('assets/gradient.png').size_8())
           .child(this.bytes ? image(this.bytes).size_8() : div().size_8())
           .child(
@@ -113,12 +113,12 @@ export default class Panel extends View {
           .text_xs()
           .child(
             t('panel.sleep', {
-              sleeping: String(sleeping()),
+              event: String(getState('sleep') ?? '–'),
               resumed:
                 resumedAt() === null
                   ? '–'
                   : new Date(resumedAt() * 1000).toLocaleTimeString(),
-              event: String(getState('sleep') ?? '–')
+              sleeping: String(sleeping())
             })
           )
       )
@@ -196,8 +196,8 @@ export default class Panel extends View {
           .child(
             spawned
               ? t('panel.spawned', {
-                  pid: spawned.pid,
                   exit: spawned.exit ?? '…',
+                  pid: spawned.pid,
                   stderr: spawned.stderr ?? ''
                 })
               : '–'
@@ -244,7 +244,9 @@ export default class Panel extends View {
   pick(cx: Context): void {
     cx.spawn(async (cx) => {
       const answer = await call('pick');
-      if (failed(answer)) this.results.desktop = `✗ ${answer.message}`;
+      if (failed(answer)) {
+        this.results.desktop = `✗ ${answer.message}`;
+      }
       cx.notify();
     });
   }

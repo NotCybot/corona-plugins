@@ -1,17 +1,17 @@
-import { nextCall, reply, fail, getState, setState } from 'corona/plugin';
+import { fail, getState, nextCall, reply, setState } from 'corona/plugin';
 import type { Call, JsonValue } from 'corona/plugin';
 import { openUri, pickFiles } from 'corona/desktop';
 import { closePanel, openPanel } from 'corona/surface';
 import { get, set } from 'corona/settings';
-import process from 'process';
-import { basename } from 'path';
-import { Buffer } from 'buffer';
+import process from 'node:process';
+import { basename } from 'node:path';
+import { Buffer } from 'node:buffer';
 import type { AsyncContext } from 'gpui-kit';
 
 const SOCKET = '/run/tailscale/tailscaled.sock';
 const LOCALAPI = 'http://local-tailscaled.sock/localapi/v0/';
 const HEADERS = { 'Sec-Tailscale': 'localapi' };
-/** ipn.NotifyWatchOpt: initial state, no private keys, rate-limited netmaps */
+/** Ipn.NotifyWatchOpt: initial state, no private keys, rate-limited netmaps */
 const WATCH_MASK = 2 | 16 | 256;
 const EXIT_ROUTES = ['0.0.0.0/0', '::/0'];
 const ADMIN: Record<string, string> = {
@@ -26,7 +26,7 @@ export type Conn =
   | 'needs-login'
   | 'starting'
   | 'unavailable';
-export type Peer = {
+export interface Peer {
   id: string;
   name: string;
   ip: string;
@@ -34,10 +34,10 @@ export type Peer = {
   online: boolean;
   lastSeen: string | null;
   exitOption: boolean;
-};
+}
 export type PrefKey = 'shields' | 'routes' | 'ssh' | 'advertise' | 'lan';
 /** What the views read from state `ts` */
-export type Snapshot = {
+export interface Snapshot {
   conn: Conn;
   error: string | null;
   self: { name: string; ip: string } | null;
@@ -50,11 +50,14 @@ export type Snapshot = {
   admin: string | null;
   /** Taildrop files waiting to be received */
   waiting: number;
-};
+}
 /** State `recent`, newest first */
-export type Recent = { file: string; meta: string };
+export interface Recent {
+  file: string;
+  meta: string;
+}
 
-type Node = {
+interface Node {
   ID: string;
   HostName: string;
   DNSName: string;
@@ -64,13 +67,13 @@ type Node = {
   LastSeen?: string;
   ExitNodeOption?: boolean;
   KeyExpiry?: string;
-};
-type Status = {
+}
+interface Status {
   BackendState: string;
   Self?: Node;
   Peer?: Record<string, Node>;
-};
-type Prefs = {
+}
+interface Prefs {
   ControlURL: string;
   WantRunning: boolean;
   ExitNodeID: string;
@@ -79,35 +82,36 @@ type Prefs = {
   RunSSH: boolean;
   ExitNodeAllowLANAccess: boolean;
   AdvertiseRoutes: string[] | null;
-};
+}
 
 /** Each view-side preference and the `ipn.Prefs` field behind it, except `advertise` */
 const PREF_FIELDS: Record<Exclude<PrefKey, 'advertise'>, string> = {
-  shields: 'ShieldsUp',
+  lan: 'ExitNodeAllowLANAccess',
   routes: 'RouteAll',
-  ssh: 'RunSSH',
-  lan: 'ExitNodeAllowLANAccess'
+  shields: 'ShieldsUp',
+  ssh: 'RunSSH'
 };
 
 const CONN: Record<string, Conn> = {
-  Running: 'running',
-  Stopped: 'stopped',
   NeedsLogin: 'needs-login',
-  NeedsMachineAuth: 'needs-login'
+  NeedsMachineAuth: 'needs-login',
+  Running: 'running',
+  Stopped: 'stopped'
 };
 
-type Args = { [key: string]: JsonValue };
+interface Args {
+  [key: string]: JsonValue;
+}
 /** Each answers with the line the panel shows */
 const methods: Record<string, (args: Args) => Promise<string | null>> = {
+  login,
+  ping,
+  receive,
   refresh: async () => {
     await refresh();
     return null;
   },
-  setRunning: async ({ on }) => {
-    await patch({ WantRunning: on === true });
-    return on ? 'Tailscale connected' : 'Tailscale disconnected';
-  },
-  login,
+  send,
   setExit: async ({ id, name }) => {
     await patch({
       ExitNodeID: typeof id === 'string' ? id : '',
@@ -116,9 +120,10 @@ const methods: Record<string, (args: Args) => Promise<string | null>> = {
     return id ? `Exit node enabled: ${name}` : 'Exit node disabled';
   },
   setPref,
-  ping,
-  send,
-  receive
+  setRunning: async ({ on }) => {
+    await patch({ WantRunning: on === true });
+    return on ? 'Tailscale connected' : 'Tailscale disconnected';
+  }
 };
 
 let loginRequested = false;
@@ -127,7 +132,9 @@ export default async function main(cx: AsyncContext): Promise<void> {
   void watch(cx);
   while (true) {
     const call = await nextCall();
-    if ('message' in call) break; // the service is stopping
+    if ('message' in call) {
+      break;
+    } // The service is stopping
     void answer(call);
   }
 }
@@ -140,8 +147,10 @@ async function answer({ id, method, args }: Call): Promise<void> {
   }
   try {
     const line = await handler((args ?? {}) as Args);
-    // also through state: a call that outlives a closed panel still reaches the next one
-    if (line) setState('msg', line);
+    // Also through state: a call that outlives a closed panel still reaches the next one
+    if (line) {
+      setState('msg', line);
+    }
     reply(id, line);
   } catch (error) {
     setState('msg', `✗ ${message(error)}`);
@@ -161,13 +170,15 @@ async function watch(cx: AsyncContext): Promise<void> {
       const stream = await fetch(
         `${LOCALAPI}watch-ipn-bus?mask=${WATCH_MASK}`,
         {
-          unix: SOCKET,
           headers: HEADERS,
-          stream: true
+          stream: true,
+          unix: SOCKET
         }
       );
       try {
-        if (!stream.ok) throw new Error(`watch-ipn-bus: HTTP ${stream.status}`);
+        if (!stream.ok) {
+          throw new Error(`watch-ipn-bus: HTTP ${stream.status}`);
+        }
         delay = 1000;
         let rest = '';
         for (
@@ -179,7 +190,9 @@ async function watch(cx: AsyncContext): Promise<void> {
             '\n'
           );
           rest = lines.pop() ?? '';
-          for (const line of lines) if (line.trim()) notified(JSON.parse(line));
+          for (const line of lines) {
+            if (line.trim()) notified(JSON.parse(line));
+          }
         }
       } finally {
         stream.close();
@@ -196,13 +209,17 @@ function notified(notify: {
   BrowseToURL?: string | null;
   ErrMessage?: string | null;
 }): void {
-  // only the login this plugin asked for opens a browser
+  // Only the login this plugin asked for opens a browser
   if (notify.BrowseToURL && loginRequested) {
     loginRequested = false;
     const error = openUri(notify.BrowseToURL);
-    if (error) setState('msg', `✗ ${error.message}`);
+    if (error) {
+      setState('msg', `✗ ${error.message}`);
+    }
   }
-  if (notify.ErrMessage) setState('msg', `✗ ${notify.ErrMessage}`);
+  if (notify.ErrMessage) {
+    setState('msg', `✗ ${notify.ErrMessage}`);
+  }
   queueRefresh();
 }
 
@@ -229,7 +246,7 @@ async function refresh(): Promise<void> {
     const [status, prefs, files] = await Promise.all([
       api('status') as Promise<Status>,
       api('prefs') as Promise<Prefs>,
-      // fails without Taildrop; not worth failing the rest for
+      // Fails without Taildrop; not worth failing the rest for
       (api('files/') as Promise<unknown[] | null>).catch((): null => null)
     ]);
     setState('ts', snapshot(status, prefs, files?.length ?? 0));
@@ -242,39 +259,39 @@ function snapshot(status: Status, prefs: Prefs, waiting: number): Snapshot {
   const self = status.Self;
   const peers = Object.values(status.Peer ?? {})
     .map((node): Peer => ({
+      exitOption: node.ExitNodeOption,
       id: node.ID,
-      name: nodeName(node),
       ip: node.TailscaleIPs?.[0] ?? '',
-      os: node.OS,
-      online: node.Online === true,
       lastSeen: node.LastSeen?.startsWith('0001')
         ? null
         : (node.LastSeen ?? null),
-      exitOption: node.ExitNodeOption === true
+      name: nodeName(node),
+      online: node.Online,
+      os: node.OS
     }))
     .sort(
       (a, b) =>
         Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)
     );
   return {
+    admin: ADMIN[prefs.ControlURL] ?? null,
     conn: CONN[status.BackendState] ?? 'starting',
     error: null,
-    self: self
-      ? { name: nodeName(self), ip: self.TailscaleIPs?.[0] ?? '' }
-      : null,
-    peers,
     exitNode: prefs.ExitNodeID || null,
+    keyExpiry: self?.KeyExpiry ?? null,
+    peers,
     prefs: {
-      shields: prefs.ShieldsUp,
-      routes: prefs.RouteAll,
-      ssh: prefs.RunSSH,
       advertise: EXIT_ROUTES.every((route) =>
         prefs.AdvertiseRoutes?.includes(route)
       ),
-      lan: prefs.ExitNodeAllowLANAccess
+      lan: prefs.ExitNodeAllowLANAccess,
+      routes: prefs.RouteAll,
+      shields: prefs.ShieldsUp,
+      ssh: prefs.RunSSH
     },
-    keyExpiry: self?.KeyExpiry ?? null,
-    admin: ADMIN[prefs.ControlURL] ?? null,
+    self: self
+      ? { name: nodeName(self), ip: self.TailscaleIPs?.[0] ?? '' }
+      : null,
     waiting
   };
 }
@@ -287,11 +304,12 @@ function nodeName(node: Node): string {
 function unavailable(error: unknown): void {
   const last = getState('ts') as Snapshot | null;
   setState('ts', {
+    admin: null,
     conn: 'unavailable',
     error: message(error),
-    self: null,
-    peers: [],
     exitNode: null,
+    keyExpiry: null,
+    peers: [],
     prefs: last?.prefs ?? {
       shields: false,
       routes: false,
@@ -299,8 +317,7 @@ function unavailable(error: unknown): void {
       advertise: false,
       lan: false
     },
-    keyExpiry: null,
-    admin: null,
+    self: null,
     waiting: 0
   });
 }
@@ -312,30 +329,35 @@ async function api(
   body?: JsonValue
 ): Promise<unknown> {
   const options: Parameters<typeof fetch>[1] = {
-    unix: SOCKET,
-    method,
     headers: HEADERS,
-    timeout: 15_000
+    method,
+    timeout: 15_000,
+    unix: SOCKET
   };
-  if (body !== undefined) options.body = JSON.stringify(body);
+  if (body !== undefined) {
+    options.body = JSON.stringify(body);
+  }
   const response = await fetch(LOCALAPI + path, options);
   const text = await response.text();
   // 403 for write actions without operator rights
-  if (!response.ok)
+  if (!response.ok) {
     throw new Error(text.trim() || `${path}: HTTP ${response.status}`);
+  }
   return text.trim() ? JSON.parse(text) : null;
 }
 
 /** Changes `fields` of `ipn.Prefs`, as `ipn.MaskedPrefs` wants them, and refreshes */
 async function patch(fields: Args): Promise<void> {
   const masked: Args = { ...fields };
-  for (const key of Object.keys(fields)) masked[`${key}Set`] = true;
+  for (const key of Object.keys(fields)) {
+    masked[`${key}Set`] = true;
+  }
   await api('prefs', 'PATCH', masked);
   await refresh();
 }
 
 async function login(): Promise<string> {
-  // the URL comes as `BrowseToURL` on the bus, see `notified`
+  // The URL comes as `BrowseToURL` on the bus, see `notified`
   loginRequested = true;
   await api('login-interactive', 'POST');
   return 'Opening the login page in your browser…';
@@ -369,7 +391,9 @@ async function ping({ ip, name }: Args): Promise<string> {
     Endpoint?: string;
     DERPRegionCode?: string;
   };
-  if (result.Err) throw new Error(`Ping ${name}: ${result.Err}`);
+  if (result.Err) {
+    throw new Error(`Ping ${name}: ${result.Err}`);
+  }
   const ms = Math.round((result.LatencySeconds ?? 0) * 1000);
   const path = result.Endpoint ? 'direct' : `via DERP ${result.DERPRegionCode}`;
   return `Ping ${name}: pong in ${ms} ms (${path})`;
@@ -380,8 +404,10 @@ async function ping({ ip, name }: Args): Promise<string> {
  * panel drops its pending calls, so the service picks and sends.
  */
 async function send({ ip, name }: Args): Promise<string | null> {
-  const paths = await pick({ multiple: true, acceptLabel: 'Send' });
-  if (!paths) return null;
+  const paths = await pick({ acceptLabel: 'Send', multiple: true });
+  if (!paths) {
+    return null;
+  }
   await tailscale(['file', 'cp', ...paths, `${ip}:`]);
   remember(
     paths.map((path) => ({
@@ -394,15 +420,20 @@ async function send({ ip, name }: Args): Promise<string | null> {
 
 async function receive(): Promise<string | null> {
   const files = ((await api('files/')) ?? []) as { Name: string }[];
-  if (files.length === 0) return 'Taildrop: no files waiting';
+  if (files.length === 0) {
+    return 'Taildrop: no files waiting';
+  }
   let dir = get('downloads');
   if (!dir) {
-    const picked = await pick({ directory: true, acceptLabel: 'Save here' });
-    if (!picked) return null;
+    const picked = await pick({ acceptLabel: 'Save here', directory: true });
+    if (!picked) {
+      return null;
+    }
     dir = picked[0];
     const error = set('downloads', dir);
-    if (error)
+    if (error) {
       console.warn(`tailscale: keeping the Taildrop folder: ${error.message}`);
+    }
   }
   await tailscale(['file', 'get', '--conflict=rename', dir]);
   remember(
@@ -418,16 +449,19 @@ async function pick(
   closePanel('main');
   const picked = await pickFiles(options);
   openPanel('main');
-  if (picked !== null && 'message' in picked) throw new Error(picked.message);
+  if (picked !== null && 'message' in picked) {
+    throw new Error(picked.message);
+  }
   return picked as string[] | null;
 }
 
 async function tailscale(args: string[]): Promise<void> {
   const out = await process.run('tailscale', args);
-  if (out.code !== 0)
+  if (out.code !== 0) {
     throw new Error(
       out.stderr.trim() || `tailscale ${args[0]} ${args[1]} exited ${out.code}`
     );
+  }
 }
 
 function remember(entries: Recent[]): void {
