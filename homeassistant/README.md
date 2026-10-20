@@ -1,6 +1,6 @@
 # Home Assistant
 
-A bar widget and panel for Home Assistant: the entities you pin, grouped into lights, switches & locks, sensors and automations, with switches, light sliders (brightness, color temperature, hue) and run/trigger buttons.
+A bar widget and panel for Home Assistant: the entities you pin, grouped into lights, switches & locks, sensors, scenes and automations, with switches, light sliders (brightness, color temperature, hue), run/trigger buttons and On/Off for scenes.
 
 ## Setup
 
@@ -14,3 +14,4 @@ A bar widget and panel for Home Assistant: the entities you pin, grouped into li
 - While Home Assistant is unreachable it retries after 2 s, doubling up to 2 minutes, and at once when the URL or token changes. A refused token waits for a new one.
 - Pins are the **Monitored entities** list setting, editable here or in the settings app; changing them resubscribes.
 - **Manage entities** fetches `get_states` once when opened and shows the first 100 matches of the search.
+- A scene's **On** activates it (`scene.turn_on`). Home Assistant has no off for a scene, so **Off** turns off the entities the scene lists in its `entity_id` attribute (`homeassistant.turn_off`); a scene that lists none, as some integrations' scenes do, has Off disabled.

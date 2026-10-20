@@ -2,7 +2,7 @@
 id = "homeassistant"
 name = "Home Assistant"
 version = "0.1.0"
-description = "Home Assistant: pinned lights, switches, sensors and automations, live over the WebSocket API"
+description = "Home Assistant: pinned lights, switches, sensors, scenes and automations, live over the WebSocket API"
 
 # holds the WebSocket to Home Assistant; pushes the pinned entities to the views
 service = "service.ts"
