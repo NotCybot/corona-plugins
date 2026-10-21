@@ -23,7 +23,7 @@ height = 500
 [[settings]]
 key = "url"
 label = "URL"
-description = "e.g. http://192.168.1.10:8123 or https://example.ui.nabu.casa"
+description = "e.g. http://homeassistant.local:8123, http://192.168.1.10:8123 or https://example.ui.nabu.casa"
 type = "text"
 default = ""
 
@@ -43,4 +43,4 @@ default = []
 
 [capabilities]
 corona = ["secrets"]
-network = { hosts = ["${setting:url}"] }
+network = { lan_hosts = ["${setting:url}"] }

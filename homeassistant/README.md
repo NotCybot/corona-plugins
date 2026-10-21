@@ -5,7 +5,7 @@ A bar widget and panel for Home Assistant: the entities you pin, grouped into li
 ## Setup
 
 1. In Home Assistant, create a long-lived access token (Profile → Security).
-2. In the plugin settings, enter the **URL** and paste the **token**. A server on your LAN needs its IP in the URL (e.g. `http://192.168.1.10:8123`): corona refuses a host name that resolves to a private address. A public URL (Nabu Casa, a reverse proxy) works by name.
+2. In the plugin settings, enter the **URL** and paste the **token**. The URL may name a server in your local network (`http://homeassistant.local:8123`), an IP or a public URL (Nabu Casa, a reverse proxy): the plugin asks for `network.lan_hosts`, which lets that one name resolve to a private address.
 3. Add the widget `homeassistant:home` to a bar, open the panel and pin entities under **Manage entities**.
 
 ## How it works
